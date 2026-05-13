@@ -1,0 +1,14 @@
+services:
+  temporal:
+    image: temporalio/server:1.26.4
+    ports:
+      - "7233:7233"
+    environment:
+      DB: sqlite
+      SQLITE_DB_FILENAME: /temporal-db/temporal.db
+    volumes:
+      - .temporal:/temporal-db
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m

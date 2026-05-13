@@ -1,0 +1,27 @@
+#!/bin/bash
+# totp-generator <secret-base32>
+# Generates a TOTP code using the provided base32 secret
+
+set -e
+
+SECRET="${1:?Usage: totp-generator <secret-base32>}"
+
+# Use Python to generate TOTP
+python3 -c "
+import base64
+import hashlib
+import hmac
+import struct
+import time
+
+def totp(secret, digits=6, period=30):
+    # Decode base32 secret
+    key = base64.b32decode(secret.upper() + '=' * (8 - len(secret) % 8))
+    counter = struct.pack('>Q', int(time.time() / period))
+    h = hmac.new(key, counter, hashlib.sha1).digest()
+    offset = h[-1] & 0x0F
+    code = (struct.unpack('>I', h[offset:offset+4])[0] & 0x7FFFFFFF) % (10 ** digits)
+    return str(code).zfill(digits)
+
+print(totp('$SECRET'))
+"

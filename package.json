@@ -1,0 +1,29 @@
+{
+  "name": "shannon",
+  "private": true,
+  "version": "0.0.0-development",
+  "description": "Autonomous white-box penetration testing framework",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.8.1",
+  "scripts": {
+    "build": "turbo run build",
+    "build:cli": "turbo run build --filter=shannon-cli",
+    "build:worker": "turbo run build --filter=shannon-worker",
+    "lint": "biome check --apply .",
+    "lint:check": "biome check .",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean",
+    "format": "biome format --write .",
+    "format:check": "biome format ."
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["@biomejs/biome", "@swc/core", "protobufjs", "esbuild"]
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "turbo": "^2.5.0",
+    "typescript": "^5.8.3"
+  }
+}
