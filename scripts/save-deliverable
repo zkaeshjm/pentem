@@ -7,7 +7,7 @@ set -e
 AGENT_NAME="${1:?Usage: save-deliverable <agent-name> <filename>}"
 FILENAME="${2:?Usage: save-deliverable <agent-name> <filename>}"
 
-AUDIT_DIR="${SHANNON_AUDIT_DIR:-/workspace/audit}"
+AUDIT_DIR="${PENTEM_AUDIT_DIR:-/workspace/audit}"
 DEL_DIR="$AUDIT_DIR/$AGENT_NAME/deliverables"
 
 mkdir -p "$DEL_DIR"

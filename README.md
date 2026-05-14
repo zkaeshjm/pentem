@@ -1,174 +1,219 @@
-# pentem
+# Pentem — Autonomous Agentic AI & Manual Penetration Testing Framework
 
-Autonomous white-box penetration testing framework powered by LLM agents.
+```
+  ██████╗ ███████╗███╗   ██╗████████╗███████╗███╗   ███╗
+  ██╔══██╗██╔════╝████╗  ██║╚══██╔══╝██╔════╝████╗ ████║
+  ██████╔╝█████╗  ██╔██╗ ██║   ██║   █████╗  ██╔████╔██║
+  ██╔═══╝ ██╔══╝  ██║╚██╗██║   ██║   ██╔══╝  ██║╚██╔╝██║
+  ██║     ███████╗██║ ╚████║   ██║   ███████╗██║ ╚═╝ ██║
+  ╚═╝     ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═╝     ╚═╝
+```
 
-Pentem uses AI agents (Claude) to automatically discover, analyze, and exploit security vulnerabilities in web applications. It runs a multi-phase pipeline orchestrated by [Temporal.io](https://temporal.io/), with each phase delegating to specialized agents that have access to real security tools and browser automation.
+Pentem is an **autonomous penetration testing framework** with two modes:
+
+- **🤖 Agentic AI Mode** — Uses LLM agents (Anthropic Claude / OpenAI GPT-4o) to autonomously probe, analyze, and exploit vulnerabilities
+- **🔧 Manual Mode** — No API key needed. Built-in HTTP crawler + pattern scanner checks headers, paths, SQLi, XSS
+
+---
+
+## Quick Start
+
+```powershell
+# Install
+.\scripts\install.ps1
+
+# Launch TUI (interactive)
+pentem
+
+# Manual scan (no API key needed)
+pentem scan --manual https://example.com
+
+# AI agentic scan (set API key first)
+$env:ANTHROPIC_API_KEY = "sk-ant-..."
+pentem scan https://example.com
+```
+
+---
+
+## Terminal UI
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  ██████╗ ███████╗███╗   ██╗████████╗███████╗███╗   ███╗       │
+│  ██╔══██╗██╔════╝████╗  ██║╚══██╔══╝██╔════╝████╗ ████║       │
+│  Agentic AI & Manual Penetration Tester     v0.1.0              │
+├─────────────────────────────────────────────────────────────────┤
+│ [1] Dashboard  [2] Scans  [3] Reports  [4] Config               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   ╔═══════════════════════════════════════════════╗              │
+│   ║          Pentem — Choose Your Mode           ║              │
+│   ╠═══════════════════════════════════════════════╣              │
+│   ║  [1] Agentic AI —  Requires an LLM API key   ║              │
+│   ║      The AI agent autonomously analyzes,     ║              │
+│   ║      probes, and exploits vulnerabilities    ║              │
+│   ║                                               ║              │
+│   ║  [2] Manual —  No API key needed             ║              │
+│   ║      Built-in HTTP crawler + pattern scanner  ║              │
+│   ║      Checks headers, paths, SQLi, XSS        ║              │
+│   ║                                               ║              │
+│   ║  [3] Config —  View/edit configuration       ║              │
+│   ╚═══════════════════════════════════════════════╝              │
+│                                                                  │
+│   Press 1, 2, or 3 to continue.                                 │
+├─────────────────────────────────────────────────────────────────┤
+│ Select mode — [1] Agentic AI  [2] Manual  [3] Config            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
 
 ## Features
 
-- **Fully autonomous** — from reconnaissance to exploitation to reporting
-- **Multi-phase pipeline**: Pre-Recon → Recon → Vulnerability Analysis → Exploitation → Report
-- **Parallel agent execution** — 5 vulnerability/exploit agent pairs run concurrently
-- **Durable workflows** — survives process restarts via Temporal; supports resume
-- **Multiple auth types** — form login, SSO, API keys, basic auth with optional TOTP
-- **Configurable scope** — include/exclude URL patterns to focus testing
-- **Multiple LLM providers** — Anthropic, AWS Bedrock, GCP Vertex, or custom proxy
-- **Real security tools** — nmap, subfinder, WhatWeb, schemathesis, Playwright
-- **Plugin system** — extensible checkpoints, external findings, and report output
+### 🤖 Agentic AI Mode
+| Feature | Description |
+|---------|-------------|
+| **Autonomous scanning** | AI agents probe, analyze, and exploit targets across 5 phases |
+| **Multiple LLM providers** | Anthropic Claude, OpenAI GPT-4o, any OpenAI-compatible provider |
+| **Model selection** | Choose from available models or enter custom model name |
+| **Phases** | Pre-recon → Recon → Vulnerability Analysis → Exploitation → Report |
+| **Vulnerability types** | SQLi, XSS, Auth Bypass, Authorization Bypass, SSRF |
+| **Progress tracking** | Real-time agent progress shown in TUI and CLI |
+
+### 🔧 Manual Mode (No AI)
+| Feature | Description |
+|---------|-------------|
+| **Zero dependencies** | No API key, no Docker, no setup required |
+| **HTTP crawler** | Probes 28+ common paths (admin, api, .env, backup, etc.) |
+| **Security headers** | Checks HSTS, CSP, X-Frame-Options, X-Content-Type-Options, etc. |
+| **SQL injection** | Tests 5+ SQLi patterns and detects indicators |
+| **XSS detection** | Tests reflected XSS with multiple payloads |
+| **Technology fingerprinting** | Detects server, framework, cookies |
+| **40+ HTTP requests** | Full request/response log captured |
+
+### 📊 Reports & Logging
+| Feature | Command |
+|---------|---------|
+| **View full report** | `pentem report <session-id>` |
+| **View raw request logs** | `pentem report <session-id> --logs` |
+| **Save report to file** | `pentem report <session-id> --output ./report.md` |
+| **Save all session data** | `pentem report <session-id> --save ./output-dir` |
+| **Save during scan** | `pentem scan --manual <url> --save-logs ./logs` |
+| **Export during scan** | `pentem scan --manual <url> --output ./report.md` |
+
+---
+
+## Commands
+
+```powershell
+# TUI
+pentem                          # Launch the Terminal UI
+pentem tui                      # Launch the Terminal UI
+
+# Scanning
+pentem scan <url>               # AI agentic scan (needs API key)
+pentem scan --manual <url>      # Manual scan (no API key)
+pentem scan --manual <url> --output ./report.md    # Save report
+pentem scan --manual <url> --save-logs ./logs      # Save all logs
+
+# Session management
+pentem list                     # List all scan sessions
+pentem status <session-id>      # Check scan status
+pentem report <session-id>      # View full report in terminal
+pentem report <session-id> --logs    # View raw HTTP request logs
+pentem report <session-id> --output ./report.md   # Save to file
+pentem report <session-id> --save ./output         # Save all data
+pentem resume <session-id>      # Resume a scan
+
+# Configuration
+pentem config validate          # Validate YAML config
+pentem config init              # Create config template
+```
+
+---
+
+## AI Provider Setup
+
+### Option 1: Environment variables
+```powershell
+# Anthropic (recommended)
+$env:ANTHROPIC_API_KEY = "sk-ant-..."
+$env:ANTHROPIC_MODEL = "claude-sonnet-4-20250514"
+
+# OpenAI / compatible
+$env:OPENAI_API_KEY = "sk-..."
+$env:OPENAI_MODEL = "gpt-4o"
+$env:OPENAI_BASE_URL = "https://api.openai.com/v1"  # optional
+```
+
+### Option 2: TUI (interactive)
+1. Run `pentem`
+2. Press `1` (Anthropic) or `2` (OpenAI)
+3. Paste your API key
+4. Select or type a model name
+5. Config is saved to `~/.pentem/config.yaml` for next launch
+
+---
+
+## Manual Scan Output Example
+
+```
+╔══════════════════════════════════════════╗
+║    Pentem Manual Security Scan          ║
+╚══════════════════════════════════════════╝
+  Target: https://example.com
+
+  Probing 28 common paths...
+    /robots.txt      404  /admin  404  /api  404  ...
+    Done — 0 exposed path(s) found
+
+  Testing 5 SQL injection patterns...
+    No SQL injection indicators detected
+
+  Testing 4 XSS patterns...
+    No XSS indicators detected
+  ───────────────────────────────────────
+  Findings: 3 MEDIUM, 6 LOW
+    🟡 Missing HSTS header
+    🟡 Missing CSP header
+    🟡 Missing X-Frame-Options header
+    🔵 Server: cloudflare
+    ...
+```
+
+---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  pentem CLI                                             │
-│  (user-facing, runs on host)                            │
-│                                                         │
-│  ┌──────────┐  ┌───────────┐  ┌──────────┐             │
-│  │  scan    │  │  status   │  │  report  │  ...         │
-│  └──────────┘  └───────────┘  └──────────┘             │
-└──────────────────────┬──────────────────────────────────┘
-                       │ docker compose
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│  Docker host                                            │
-│  ┌────────────────────┐  ┌────────────────────────────┐│
-│  │  Temporal Server   │  │  pentem-worker             ││
-│  │  (workflow engine) │◄─┤  ┌──────────────────────┐  ││
-│  └────────────────────┘  │  │  Pipeline Workflow    │  ││
-│                          │  │  ├─ Pre-Recon         │  ││
-│                          │  │  ├─ Recon             │  ││
-│                          │  │  ├─ Vuln (5 agents)   │  ││
-│                          │  │  ├─ Exploit (5 agents)│  ││
-│                          │  │  └─ Report            │  ││
-│                          │  └──────────────────────┘  ││
-│                          └────────────────────────────┘│
-└─────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────┐
+│                   Pentem CLI                              │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐ │
+│  │ Dashboard │  │  Scans   │  │ Reports  │  │  Config  │ │
+│  └─────┬────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘ │
+│        │             │             │              │       │
+│  ┌─────┴─────────────┴─────────────┴──────────────┴─────┐ │
+│  │              Keyboard Dispatch (Mode-gated)          │ │
+│  └────────────────────────┬────────────────────────────┘ │
+│                           │                              │
+│  ┌────────────────────────┴────────────────────────────┐ │
+│  │                Scanner Service                      │ │
+│  │  ┌─────────────────┐  ┌──────────────────────────┐  │ │
+│  │  │  ManualScanner  │  │  DirectAgentPipeline     │  │ │
+│  │  │  (HTTP crawler  │  │  (5-phase AI agent       │  │ │
+│  │  │   + patterns)   │  │   pipeline)              │  │ │
+│  │  └─────────────────┘  └──────────────────────────┘  │ │
+│  └────────────────────────┬────────────────────────────┘ │
+│                           │                              │
+│  ┌────────────────────────┴────────────────────────────┐ │
+│  │           Providers Config + Persistence            │ │
+│  │  (ANTHROPIC_API_KEY / OPENAI_API_KEY → config.yaml) │ │
+│  └─────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────┘
 ```
 
-### Packages
+---
 
-| Package | Description |
-|---------|-------------|
-| `packages/pentem-cli` | CLI tool (`pentem` command) — user entry point |
-| `packages/pentem-worker` | Temporal worker that executes the pipeline |
-| `packages/pentem-shared` | Shared types, constants, and utilities |
+## License
 
-## Prerequisites
-
-- **Node.js** >= 20
-- **pnpm** >= 10.8
-- **Docker** (for running the worker)
-- An **Anthropic API key** (or Bedrock/Vertex credentials)
-
-## Quick Start
-
-```bash
-# Install dependencies
-pnpm install
-
-# Build all packages
-pnpm build
-
-# Run a scan
-export ANTHROPIC_API_KEY=sk-...
-pentem scan https://target-app.com
-```
-
-## CLI Usage
-
-```
-pentem scan <target-url> [--config <path>]
-pentem resume <session-id>
-pentem status <session-id>
-pentem report <session-id> [--output <path>]
-pentem list
-pentem config validate [--config <path>]
-pentem config init [--config <path>]
-```
-
-### Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `ANTHROPIC_API_KEY` | API key for Anthropic |
-| `CLAUDE_CODE_USE_BEDROCK=1` | Use AWS Bedrock |
-| `CLAUDE_CODE_USE_VERTEX=1` | Use GCP Vertex AI |
-| `ANTHROPIC_BASE_URL` | Custom API proxy URL |
-| `PENTEM_LOCAL=1` | Enable local development mode |
-| `PENTEM_MODEL_SMALL` | Model for quick tasks (default: haiku) |
-| `PENTEM_MODEL_MEDIUM` | Model for standard tasks (default: sonnet) |
-| `PENTEM_MODEL_LARGE` | Model for complex tasks (default: opus) |
-| `PENTEM_PROMPTS_DIR` | Custom prompts directory |
-
-### Modes
-
-- **Default (npx mode)**: Pulls a pre-built image, uses `~/.pentem/` as workspace
-- **Local mode** (`PENTEM_LOCAL=1`): Builds the Docker image locally from source
-
-## Configuration
-
-Pentem can be configured via YAML file. By default it looks for `pentem.yaml`, `.pentem.yaml`, or `~/.pentem/config.yaml`.
-
-```yaml
-target:
-  url: "https://target-app.com"
-  auth:
-    type: form                  # form | sso | apikey | basic
-    username: "admin"
-    password: "secret"
-    totpSecret: "BASE32SECRET"
-    loginUrl: "https://target-app.com/login"
-  focus:
-    include: ["/api/**"]
-    exclude: ["/static/**"]
-
-pipeline:
-  retryPreset: default          # default | fast | subscription
-  maxConcurrent: 3
-
-provider:
-  type: anthropic              # anthropic | bedrock | vertex | custom
-
-models:
-  small: haiku
-  medium: sonnet
-  large: opus
-```
-
-Generate a config template:
-```bash
-pentem config init
-```
-
-## Pipeline Phases
-
-| Phase | Activities | Description |
-|-------|-----------|-------------|
-| **Pre-Recon** | nmap, subfinder, WhatWeb, source analysis | Network scanning, subdomain discovery, fingerprinting |
-| **Recon** | Browser exploration (Playwright), API mapping | Interactive mapping of the application |
-| **Vulnerability** | SQLi, XSS, Auth Bypass, Authz Bypass, SSRF (parallel) | Agent-driven vulnerability discovery |
-| **Exploitation** | SQLi, XSS, Auth Bypass, Authz Bypass, SSRF (parallel) | Agent-driven exploitation of confirmed findings |
-| **Report** | Report assembly | Generates a comprehensive markdown report |
-
-## Development
-
-```bash
-pnpm install
-pnpm build          # build all packages
-pnpm build:cli      # build only CLI
-pnpm build:worker   # build only worker
-pnpm typecheck      # type-check all packages
-pnpm lint           # auto-fix lint issues
-pnpm lint:check     # check lint only
-pnpm clean          # remove dist directories
-```
-
-### Local Development Mode
-
-```bash
-export PENTEM_LOCAL=1
-pnpm build:worker
-pentem scan https://target-app.com
-```
-
-This builds the worker image locally and runs the full stack via Docker Compose.
+MIT

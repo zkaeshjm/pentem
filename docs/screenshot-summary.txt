@@ -1,0 +1,24 @@
+﻿
+  Findings: 9
+  Critical: 0
+  High: 0
+  Medium: 3
+  Low: 6
+- **Total findings:** 9
+- **Critical:** 0
+- **High:** 0
+- **Medium:** 3
+- **Low:** 6
+### 1. [≡ƒƒí MEDIUM] Missing HTTP Strict Transport Security (HSTS)
+### 2. [≡ƒƒí MEDIUM] Missing Content Security Policy (CSP)
+### 3. [≡ƒƒí MEDIUM] Missing Clickjacking Protection
+### 4. [≡ƒö╡ LOW] Target is reachable
+### 5. [≡ƒö╡ LOW] Missing MIME Sniffing Protection
+### 6. [≡ƒö╡ LOW] Missing XSS Protection Header
+### 7. [≡ƒö╡ LOW] Missing Referrer Policy
+### 8. [≡ƒö╡ LOW] Missing Permissions Policy
+### 9. [≡ƒö╡ LOW] Server: cloudflare
+- Review medium-severity findings
+
+
+

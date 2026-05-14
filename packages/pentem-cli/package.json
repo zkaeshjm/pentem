@@ -1,0 +1,37 @@
+{
+  "name": "pentem-pentest",
+  "version": "0.0.0-development",
+  "description": "Autonomous white-box penetration testing framework CLI",
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "bin": {
+    "pentem": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@internal/pentem-shared": "workspace:*",
+    "blessed": "^0.1.81",
+    "yaml": "^2.7.1"
+  },
+  "optionalDependencies": {
+    "openai": "^4.104.0"
+  },
+  "devDependencies": {
+    "@types/blessed": "^0.1.27",
+    "tsdown": "^0.1.0",
+    "typescript": "^5.8.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,41 @@
+﻿
+ΓòöΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòù
+Γòæ    Pentem Manual Security Scan          Γòæ
+ΓòÜΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¥
+  Target: https://example.com
+  Mode: Manual (no AI)
+
+  Manual scan of https://example.com
+
+  Probing 28 common paths...
+    /robots.txt                         404
+    /sitemap.xml                        404
+    /.env                               404
+    /admin                              404
+    /login                              404
+    /wp-admin                           404
+    /.git/config                        404
+    /config.php                         404
+    /backup                             404
+    /.well-known/security.txt           404
+    /api                                404
+    /graphql                            404
+    /swagger.json                       404
+    /api-docs                           404
+    /.htaccess                          404
+    /server-status                      404
+    /phpinfo.php                        404
+    /crossdomain.xml                    404
+    /clientaccesspolicy.xml             404
+    /.DS_Store                          404
+    /.gitignore                         404
+    /.htpasswd                          404
+    /wp-config.php                      404
+    /administrator                      404
+    /phpmyadmin                         404
+    /_debug                             404
+    /test                               404
+    /dev                                404
+    Done ΓÇö 0 exposed path(s) found
+  Testing 5 SQL injection patterns...
+

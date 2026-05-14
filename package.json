@@ -1,5 +1,5 @@
 {
-  "name": "shannon",
+  "name": "pentem",
   "private": true,
   "version": "0.0.0-development",
   "description": "Autonomous white-box penetration testing framework",
@@ -9,8 +9,8 @@
   "packageManager": "pnpm@10.8.1",
   "scripts": {
     "build": "turbo run build",
-    "build:cli": "turbo run build --filter=shannon-cli",
-    "build:worker": "turbo run build --filter=shannon-worker",
+    "build:cli": "turbo run build --filter=pentem-pentest",
+    "build:worker": "turbo run build --filter=pentem-worker",
     "lint": "biome check --apply .",
     "lint:check": "biome check .",
     "typecheck": "turbo run typecheck",

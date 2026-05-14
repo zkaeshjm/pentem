@@ -1,0 +1,22 @@
+# Pentem Configuration
+target:
+  url: "https://your-target-app.com"
+  # auth:
+  #   type: form      # form | sso | apikey | basic
+  #   username: admin
+  #   password: "${ENV:APP_PASSWORD}"
+  #   totp_secret: "${ENV:TOTP_SECRET}"
+  # focus:
+  #   include:
+  #     - "/admin/**"
+  #   exclude:
+  #     - "/static/**"
+
+pipeline:
+  retry_preset: default      # default | fast | subscription
+  max_concurrent: 3          # 1-5
+
+# models:
+#   small: haiku
+#   medium: sonnet
+#   large: opus

@@ -30,19 +30,19 @@ RUN git clone https://github.com/urbanadventurer/WhatWeb.git /opt/whatweb && \
 WORKDIR /app
 
 # Copy package files
-COPY packages/shannon-worker/package.json .
+COPY packages/pentem-worker/package.json .
 COPY pnpm-workspace.yaml .
 COPY package.json .
 COPY pnpm-lock.yaml .
 
 # Copy shared package
-COPY packages/shannon-shared ./packages/shannon-shared
+COPY packages/pentem-shared ./packages/pentem-shared
 
 # Install dependencies
 RUN npm install -g pnpm && pnpm install --frozen-lockfile
 
 # Copy worker source
-COPY packages/shannon-worker/src ./src
+COPY packages/pentem-worker/src ./src
 
 # Build
 RUN pnpm build

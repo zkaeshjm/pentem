@@ -5,12 +5,12 @@ set -e
 if [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ]; then
   # Create a group with the host GID
   if ! getent group "$HOST_GID" > /dev/null 2>&1; then
-    groupadd -g "$HOST_GID" shannon-host
+    groupadd -g "$HOST_GID" pentem-host
   fi
 
   # Create a user with the host UID
   if ! id -u "$HOST_UID" > /dev/null 2>&1; then
-    useradd -u "$HOST_UID" -g "$HOST_GID" -m -s /bin/bash shannon-user
+    useradd -u "$HOST_UID" -g "$HOST_GID" -m -s /bin/bash pentem-user
   fi
 
   # Ensure workspace directory exists and is writable
