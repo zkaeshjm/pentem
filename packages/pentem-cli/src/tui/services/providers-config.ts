@@ -139,12 +139,12 @@ export function detectFromEnvOrConfig(): {
   if (configured.length > 1) {
     return {
       configured: false,
-      provider: configured[0].provider,
+      provider: configured[0]!.provider,
       error: `Multiple providers detected (${configured.map((c) => c.provider).join(', ')}). Use only one.`,
     };
   }
 
-  const { provider: p, apiKey: k, model: m, baseUrl: b } = configured[0];
+  const { provider: p, apiKey: k, model: m, baseUrl: b } = configured[0]!;
   provider = p;
   apiKey = k;
   model = m;

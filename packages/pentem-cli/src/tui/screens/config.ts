@@ -64,7 +64,7 @@ export class ConfigScreen implements TUIScreen {
       inputOnFocus: true,
     });
 
-    this.textarea.key(['C-s'], () => this.save());
+    this.textarea!.key(['C-s'], () => this.save());
     this.app.screen.key(['r', 'R'], () => {
       if (!this.textarea) return;
       this.reload();

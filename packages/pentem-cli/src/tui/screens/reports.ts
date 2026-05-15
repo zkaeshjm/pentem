@@ -74,13 +74,14 @@ export class ReportsScreen implements TUIScreen {
   }
 
   private showReport(): void {
-    const idx = this.list.selected;
+    // biome-ignore lint/suspicious/noExplicitAny: blessed.ListElement.selected exists at runtime
+    const idx = (this.list as any).selected as number;
     const item = this.list.getItem(idx);
     if (!item) return;
     const m = item.getContent().match(/(scan-\d+-[a-z0-9]+)/);
     if (!m) return;
 
-    const content = getReportContent(m[1]);
+    const content = getReportContent(m[1]!);
     if (!content) {
       this.app.setStatus('No report content found');
       return;
@@ -104,7 +105,7 @@ export class ReportsScreen implements TUIScreen {
       vi: true,
     });
 
-    this.reportBox.focus();
+    this.reportBox!.focus();
     this.app.screen.render();
   }
 

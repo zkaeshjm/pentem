@@ -58,10 +58,20 @@ async function startManualScan(url: string, workspacePath: string): Promise<Scan
     const sessionsDir = path.join(workspacePath, '.pentem');
     fs.mkdirSync(sessionsDir, { recursive: true });
 
-    const session = {
+    const session: {
+      sessionId: string;
+      targetUrl: string;
+      status: string;
+      completedAgents: string[];
+      failedAgents: string[];
+      currentPhase: string;
+      metrics: { totalCost: number; totalTurns: number; totalDurationMs: number; perAgent: Record<string, unknown> };
+      startedAt: string;
+      completedAt?: string;
+    } = {
       sessionId,
       targetUrl: url,
-      status: 'in_progress' as const,
+      status: 'in_progress',
       completedAgents: [],
       failedAgents: [],
       currentPhase: 'manual-scan',

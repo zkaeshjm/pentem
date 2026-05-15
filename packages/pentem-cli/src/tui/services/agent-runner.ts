@@ -164,6 +164,7 @@ Always think step by step. First explore, then analyze, then report.`;
       });
 
       const choice = response.choices[0];
+      if (!choice) break;
       const msg = choice.message;
 
       if (msg.tool_calls && msg.tool_calls.length > 0) {

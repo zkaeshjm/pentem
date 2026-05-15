@@ -5,7 +5,7 @@ import * as path from 'node:path';
 const require = createRequire(import.meta.url);
 const blessed = require('blessed');
 
-import type { Screen, Widgets } from 'blessed';
+import type { Widgets } from 'blessed';
 
 import { ManualScanner } from './services/manual-scanner.ts';
 import {
@@ -24,6 +24,23 @@ import {
   saveSessionOutput,
 } from './services/workspace.ts';
 
+// ─── TYPES ─────────────────────────────────────────────────────
+
+export interface App {
+  screen: Widgets.Screen;
+  setStatus(msg: string): void;
+}
+
+export type ScreenId = 'dashboard' | 'scans' | 'reports' | 'config';
+
+export interface TUIScreen {
+  id: ScreenId;
+  label: string;
+  activate(): void;
+  deactivate(): void;
+  refresh(): void;
+}
+
 // ─── STATE ─────────────────────────────────────────────────────
 type Mode =
   | 'setup'
@@ -39,7 +56,7 @@ type Mode =
   | 'agentic-progress';
 
 let mode: Mode = 'setup';
-let screen: Screen;
+let screen: Widgets.Screen;
 let contentBox: Widgets.BoxElement;
 let statusBar: Widgets.BoxElement;
 let pendingProvider = '';
@@ -128,16 +145,18 @@ function renderTabs(active: number): void {
   }
   let x = 0;
   for (let i = 0; i < tabs.length; i++) {
+    const tab = tabs[i];
+    if (!tab) continue;
     blessed.text({
       parent: tabBar,
       top: 0,
       left: x,
-      width: tabs[i].length + 1,
+      width: tab.length + 1,
       height: 1,
-      content: tabs[i],
+      content: tab,
       style: i === active ? { bg: 'cyan', fg: 'black', bold: true } : { bg: 'blue', fg: 'white' },
     });
-    x += tabs[i].length + 1;
+    x += tab.length + 1;
   }
 }
 
@@ -809,7 +828,8 @@ function setupKeyboard(): void {
     if (['api-key-input', 'model-select', 'new-scan-input', 'manual-scan-input'].includes(mode)) return;
     const tabOrder: Mode[] = ['dashboard', 'scans', 'reports', 'config'];
     const idx = tabOrder.indexOf(mode);
-    if (idx >= 0) go(tabOrder[(idx + 1) % 4]);
+    const nextMode = tabOrder[(idx + 1) % 4];
+    if (nextMode) go(nextMode);
     else go('dashboard');
   });
 

@@ -50,7 +50,8 @@ export function generateCompose(options: ComposeOptions): string {
   };
 
   if (localDev && promptsDir) {
-    (config.services.worker as Record<string, unknown>).volumes.push(`${promptsDir}:/prompts`);
+    const svc = config.services as Record<string, { volumes: string[] }>;
+    svc.worker?.volumes.push(`${promptsDir}:/prompts`);
   }
 
   return JSON.stringify(config, null, 2);

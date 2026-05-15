@@ -14,7 +14,7 @@ export class ScansScreen implements TUIScreen {
   private list: Widgets.ListElement;
   private statusText: Widgets.TextElement;
   private inputBox: Widgets.BoxElement | null = null;
-  private inputField: Widgets.Textbox | null = null;
+  private inputField: Widgets.BoxElement | null = null;
   private detailBox: Widgets.BoxElement | null = null;
   private isInputMode = false;
   private app: App;
@@ -137,9 +137,9 @@ export class ScansScreen implements TUIScreen {
     this.app.screen.key(['escape'], () => {
       if (this.isInputMode) this.closePrompt();
     });
-    this.inputField.key(['return'], () => this.handleStart());
+    this.inputField!.key(['return'], () => this.handleStart());
 
-    this.inputField.focus();
+    this.inputField!.focus();
     this.app.screen.render();
   }
 
@@ -154,7 +154,8 @@ export class ScansScreen implements TUIScreen {
   }
 
   private async handleStart(): Promise<void> {
-    const url = this.inputField?.getValue()?.trim();
+    // biome-ignore lint/suspicious/noExplicitAny: blessed.textarea type not in @types/blessed
+    const url = (this.inputField as any)?.getValue()?.trim();
     if (!url) return;
     this.closePrompt();
     this.app.setStatus(`Starting scan on ${url}...`);
@@ -169,24 +170,26 @@ export class ScansScreen implements TUIScreen {
   }
 
   private stopSelected(): void {
-    const idx = this.list.selected;
+    // biome-ignore lint/suspicious/noExplicitAny: blessed.ListElement.selected exists at runtime
+    const idx = (this.list as any).selected as number;
     const item = this.list.getItem(idx);
     if (!item) return;
     const m = item.getContent().match(/(scan-\d+-[a-z0-9]+)/);
     if (!m) return;
-    stopScan(m[1]);
-    this.app.setStatus(`Stopped: ${m[1]}`);
+    stopScan(m[1]!);
+    this.app.setStatus(`Stopped: ${m[1]!}`);
     this.refresh();
   }
 
   private showDetails(): void {
-    const idx = this.list.selected;
+    // biome-ignore lint/suspicious/noExplicitAny: blessed.ListElement.selected exists at runtime
+    const idx = (this.list as any).selected as number;
     const item = this.list.getItem(idx);
     if (!item) return;
     const m = item.getContent().match(/(scan-\d+-[a-z0-9]+)/);
     if (!m) return;
 
-    const s = getSession(m[1]);
+    const s = getSession(m[1]!);
     if (!s) return;
 
     this.closeDetail();
@@ -217,8 +220,8 @@ export class ScansScreen implements TUIScreen {
       scrollbar: { ch: ' ', style: { bg: 'yellow' } },
     });
 
-    this.detailBox.key(['escape', 'd', 'D'], () => this.closeDetail());
-    this.detailBox.focus();
+    this.detailBox!.key(['escape', 'd', 'D'], () => this.closeDetail());
+    this.detailBox!.focus();
     this.app.screen.render();
   }
 
