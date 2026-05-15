@@ -156,11 +156,8 @@ Always think step by step. First explore, then analyze, then report.`;
 
       const response = await openai.chat.completions.create({
         model,
-        messages: messages as Array<{
-          role: 'system' | 'user' | 'assistant' | 'tool';
-          content: string;
-          tool_call_id?: string;
-        }>,
+        // biome-ignore lint/suspicious/noExplicitAny: OpenAI SDK types require this cast for mixed-role messages
+        messages: messages as any,
         tools,
         tool_choice: 'auto',
         max_tokens: 4000,
