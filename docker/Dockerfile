@@ -24,6 +24,7 @@ RUN go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
 
 # Install whatweb
 RUN git clone https://github.com/urbanadventurer/WhatWeb.git /opt/whatweb && \
+  mkdir -p /usr/local/bin && \
   ln -s /opt/whatweb/whatweb /usr/local/bin/whatweb
 
 WORKDIR /app
@@ -71,7 +72,7 @@ RUN pip3 install schemathesis==4.13.0
 
 # Copy built artifacts and dependencies from builder
 COPY --from=builder /opt/whatweb /opt/whatweb
-RUN ln -s /opt/whatweb/whatweb /usr/local/bin/whatweb
+RUN mkdir -p /usr/local/bin && ln -s /opt/whatweb/whatweb /usr/local/bin/whatweb
 
 COPY --from=builder /root/go/bin/subfinder /usr/local/bin/subfinder
 
