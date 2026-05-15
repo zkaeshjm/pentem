@@ -24,7 +24,9 @@ export function listSessions(): SessionData[] {
   if (!fs.existsSync(sessionsDir)) return [];
   const sessions: SessionData[] = [];
   for (const file of fs.readdirSync(sessionsDir).filter((f) => f.endsWith('.json'))) {
-    try { sessions.push(JSON.parse(fs.readFileSync(path.join(sessionsDir, file), 'utf-8'))); } catch {}
+    try {
+      sessions.push(JSON.parse(fs.readFileSync(path.join(sessionsDir, file), 'utf-8')));
+    } catch {}
   }
   sessions.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
   return sessions;
@@ -33,7 +35,11 @@ export function listSessions(): SessionData[] {
 export function getSession(sessionId: string): SessionData | null {
   const p = path.join(getWorkspacePath(), '.pentem', `${sessionId}.json`);
   if (!fs.existsSync(p)) return null;
-  try { return JSON.parse(fs.readFileSync(p, 'utf-8')); } catch { return null; }
+  try {
+    return JSON.parse(fs.readFileSync(p, 'utf-8'));
+  } catch {
+    return null;
+  }
 }
 
 export function getReportContent(sessionId: string): string | null {
@@ -64,19 +70,19 @@ export function getSessionLogContent(sessionId: string): string | null {
     for (const entry of fs.readdirSync(dir)) {
       const fullPath = path.join(dir, entry);
       if (fs.statSync(fullPath).isDirectory()) {
-        lines.push(`---`);
+        lines.push('---');
         lines.push(`# Directory: ${path.relative(auditDir, fullPath)}`);
-        lines.push(``);
+        lines.push('');
         collectDir(fullPath, depth + 1);
       } else if (entry.endsWith('.log') || entry.endsWith('.md') || entry.endsWith('.json') || entry.endsWith('.txt')) {
         try {
           const content = fs.readFileSync(fullPath, 'utf-8');
-          lines.push(`---`);
+          lines.push('---');
           lines.push(`## File: ${path.relative(auditDir, fullPath)}`);
-          lines.push(``);
-          const preview = content.length > 3000 ? content.slice(0, 3000) + '\n... [truncated]' : content;
+          lines.push('');
+          const preview = content.length > 3000 ? `${content.slice(0, 3000)}\n... [truncated]` : content;
           lines.push(preview);
-          lines.push(``);
+          lines.push('');
         } catch {}
       }
     }
@@ -125,7 +131,7 @@ export function saveSessionOutput(sessionId: string, outputDir: string): string 
     }
 
     return targetDir;
-  } catch (err) {
+  } catch (_err) {
     return null;
   }
 }
@@ -155,5 +161,10 @@ export function getConfigPath(): string | null {
 export function writeConfig(content: string): boolean {
   const cp = getConfigPath();
   if (!cp) return false;
-  try { fs.writeFileSync(cp, content, 'utf-8'); return true; } catch { return false; }
+  try {
+    fs.writeFileSync(cp, content, 'utf-8');
+    return true;
+  } catch {
+    return false;
+  }
 }

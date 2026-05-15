@@ -1,27 +1,41 @@
-import * as path from 'node:path';
-import * as os from 'node:os';
 import { createRequire } from 'node:module';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 const require = createRequire(import.meta.url);
 const blessed = require('blessed');
 
 import type { Screen, Widgets } from 'blessed';
 
-import { listSessions, listReports, getReportContent, getConfigContent, getSessionLogContent, saveSessionOutput } from './services/workspace.ts';
-import { startScan, validateUrl } from './services/scanner.ts';
 import { ManualScanner } from './services/manual-scanner.ts';
 import {
-  detectFromEnvOrConfig,
-  savePersistedConfig,
   clearPersistedConfig,
+  detectFromEnvOrConfig,
   getModelsForProvider,
+  savePersistedConfig,
 } from './services/providers-config.ts';
+import { startScan, validateUrl } from './services/scanner.ts';
+import {
+  getConfigContent,
+  getReportContent,
+  getSessionLogContent,
+  listReports,
+  listSessions,
+  saveSessionOutput,
+} from './services/workspace.ts';
 
 // ─── STATE ─────────────────────────────────────────────────────
 type Mode =
-  | 'setup' | 'api-key-input' | 'model-select'
-  | 'dashboard' | 'scans' | 'reports' | 'config'
-  | 'new-scan-input' | 'manual-scan-input' | 'manual-scan-result'
+  | 'setup'
+  | 'api-key-input'
+  | 'model-select'
+  | 'dashboard'
+  | 'scans'
+  | 'reports'
+  | 'config'
+  | 'new-scan-input'
+  | 'manual-scan-input'
+  | 'manual-scan-result'
   | 'agentic-progress';
 
 let mode: Mode = 'setup';
@@ -33,7 +47,7 @@ let pendingApiKey = '';
 let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
 const HEADER = ' ██████╗ ███████╗███╗   ██╗████████╗███████╗███╗   ███╗  v0.1.0';
-const SUB    = ' ██╔══██╗██╔════╝████╗  ██║╚══██╔══╝██╔════╝████╗ ████║  Agentic AI & Manual Penetration Tester';
+const SUB = ' ██╔══██╗██╔════╝████╗  ██║╚══██╔══╝██╔════╝████╗ ████║  Agentic AI & Manual Penetration Tester';
 
 // ─── HELPERS ────────────────────────────────────────────────────
 
@@ -45,28 +59,60 @@ function status(msg: string): void {
 function clear(): void {
   contentBox.setContent('');
   for (const c of [...(contentBox.children || [])]) {
-    try { c.detach(); c.destroy(); } catch {}
+    try {
+      c.detach();
+      c.destroy();
+    } catch {}
   }
 }
 
 function go(m: Mode): void {
   mode = m;
   const provider = detectFromEnvOrConfig();
-  if (!provider.configured && !['setup', 'api-key-input', 'model-select', 'config', 'manual-scan-input', 'dashboard', 'scans', 'reports'].includes(m)) {
+  if (
+    !provider.configured &&
+    ![
+      'setup',
+      'api-key-input',
+      'model-select',
+      'config',
+      'manual-scan-input',
+      'dashboard',
+      'scans',
+      'reports',
+    ].includes(m)
+  ) {
     mode = 'setup';
   }
   clear();
   switch (mode) {
-    case 'setup':        renderSetup(); break;
-    case 'api-key-input': renderApiKeyInput(pendingProvider); break;
-    case 'model-select':  renderModelSelect(); break;
-    case 'dashboard':    renderDashboard(); break;
-    case 'scans':        renderScans(); break;
-    case 'reports':      renderReports(); break;
-    case 'config':       renderConfig(); break;
-    case 'new-scan-input': renderNewScanInput(); break;
+    case 'setup':
+      renderSetup();
+      break;
+    case 'api-key-input':
+      renderApiKeyInput(pendingProvider);
+      break;
+    case 'model-select':
+      renderModelSelect();
+      break;
+    case 'dashboard':
+      renderDashboard();
+      break;
+    case 'scans':
+      renderScans();
+      break;
+    case 'reports':
+      renderReports();
+      break;
+    case 'config':
+      renderConfig();
+      break;
+    case 'new-scan-input':
+      renderNewScanInput();
+      break;
     case 'manual-scan-result':
-    case 'agentic-progress': break;
+    case 'agentic-progress':
+      break;
   }
   screen.render();
 }
@@ -76,11 +122,18 @@ function go(m: Mode): void {
 function renderTabs(active: number): void {
   const tabs = ['[1] Dashboard', '[2] Scans', '[3] Reports', '[4] Config'];
   const tabBar = blessed.box({ parent: contentBox, top: 0, left: 0, width: '100%', height: 1, style: { bg: 'blue' } });
-  if (active === -1) { screen.render(); return; }
+  if (active === -1) {
+    screen.render();
+    return;
+  }
   let x = 0;
   for (let i = 0; i < tabs.length; i++) {
     blessed.text({
-      parent: tabBar, top: 0, left: x, width: tabs[i].length + 1, height: 1,
+      parent: tabBar,
+      top: 0,
+      left: x,
+      width: tabs[i].length + 1,
+      height: 1,
       content: tabs[i],
       style: i === active ? { bg: 'cyan', fg: 'black', bold: true } : { bg: 'blue', fg: 'white' },
     });
@@ -119,12 +172,34 @@ function renderApiKeyInput(providerType: string): void {
   const label = providerType === 'anthropic' ? 'Anthropic (Claude)' : 'OpenAI (GPT-4o / compatible)';
   const envVar = providerType === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY';
 
-  blessed.text({ parent: contentBox, top: 3, left: 2, content: `Enter ${label} API Key:`, style: { fg: 'cyan', bold: true } });
-  blessed.text({ parent: contentBox, top: 4, left: 2, content: `Sets ${envVar} for this session`, style: { fg: 'gray' } });
-  blessed.text({ parent: contentBox, top: 5, left: 2, content: 'Paste your key, then press Enter to confirm / Escape to go back', style: { fg: 'gray' } });
+  blessed.text({
+    parent: contentBox,
+    top: 3,
+    left: 2,
+    content: `Enter ${label} API Key:`,
+    style: { fg: 'cyan', bold: true },
+  });
+  blessed.text({
+    parent: contentBox,
+    top: 4,
+    left: 2,
+    content: `Sets ${envVar} for this session`,
+    style: { fg: 'gray' },
+  });
+  blessed.text({
+    parent: contentBox,
+    top: 5,
+    left: 2,
+    content: 'Paste your key, then press Enter to confirm / Escape to go back',
+    style: { fg: 'gray' },
+  });
 
   const inp = blessed.textbox({
-    parent: contentBox, top: 7, left: 2, width: 76, height: 1,
+    parent: contentBox,
+    top: 7,
+    left: 2,
+    width: 76,
+    height: 1,
     style: { bg: 'blue', fg: 'white', focus: { bg: 'green' } },
     inputOnFocus: true,
   });
@@ -138,8 +213,8 @@ function renderApiKeyInput(providerType: string): void {
     pendingApiKey = val;
     pendingProvider = providerType;
     // Clear other provider env to avoid conflict
-    if (providerType === 'anthropic') delete process.env.OPENAI_API_KEY;
-    else delete process.env.ANTHROPIC_API_KEY;
+    if (providerType === 'anthropic') process.env.OPENAI_API_KEY = undefined;
+    else process.env.ANTHROPIC_API_KEY = undefined;
     // Store in env
     if (providerType === 'anthropic') process.env.ANTHROPIC_API_KEY = val;
     else process.env.OPENAI_API_KEY = val;
@@ -158,9 +233,27 @@ function renderModelSelect(): void {
   const models = getModelsForProvider(pendingProvider);
   const label = pendingProvider === 'anthropic' ? 'Anthropic' : 'OpenAI';
 
-  blessed.text({ parent: contentBox, top: 2, left: 2, content: `Select ${label} Model:`, style: { fg: 'cyan', bold: true } });
-  blessed.text({ parent: contentBox, top: 3, left: 2, content: `API key set: ${pendingApiKey.slice(0, 8)}...${pendingApiKey.slice(-4)}`, style: { fg: 'green' } });
-  blessed.text({ parent: contentBox, top: 4, left: 2, content: 'Pick a model or type a custom name. Press Enter to confirm.', style: { fg: 'gray' } });
+  blessed.text({
+    parent: contentBox,
+    top: 2,
+    left: 2,
+    content: `Select ${label} Model:`,
+    style: { fg: 'cyan', bold: true },
+  });
+  blessed.text({
+    parent: contentBox,
+    top: 3,
+    left: 2,
+    content: `API key set: ${pendingApiKey.slice(0, 8)}...${pendingApiKey.slice(-4)}`,
+    style: { fg: 'green' },
+  });
+  blessed.text({
+    parent: contentBox,
+    top: 4,
+    left: 2,
+    content: 'Pick a model or type a custom name. Press Enter to confirm.',
+    style: { fg: 'gray' },
+  });
 
   models.forEach((m, i) => {
     blessed.text({ parent: contentBox, top: 6 + i, left: 2, content: `  ${i + 1}. ${m}`, style: { fg: 'white' } });
@@ -170,12 +263,22 @@ function renderModelSelect(): void {
   blessed.text({ parent: contentBox, top: 6 + models.length, left: 2, content: customLabel, style: { fg: 'gray' } });
 
   const inp = blessed.textbox({
-    parent: contentBox, top: 8 + models.length, left: 2, width: 76, height: 1,
+    parent: contentBox,
+    top: 8 + models.length,
+    left: 2,
+    width: 76,
+    height: 1,
     style: { bg: 'blue', fg: 'white', focus: { bg: 'green' } },
     inputOnFocus: true,
   });
 
-  blessed.text({ parent: contentBox, top: 10 + models.length, left: 2, content: 'Enter model name or number (1-9), then press Enter', style: { fg: 'gray' } });
+  blessed.text({
+    parent: contentBox,
+    top: 10 + models.length,
+    left: 2,
+    content: 'Enter model name or number (1-9), then press Enter',
+    style: { fg: 'gray' },
+  });
 
   inp.focus();
   screen.render();
@@ -185,7 +288,7 @@ function renderModelSelect(): void {
     let model = raw;
 
     // Check if user entered a number
-    const num = parseInt(raw, 10);
+    const num = Number.parseInt(raw, 10);
     if (num >= 1 && num <= models.length) {
       model = models[num - 1];
     } else if (num === models.length + 1 || raw === '') {
@@ -227,32 +330,80 @@ function renderDashboard(): void {
   const provider = detectFromEnvOrConfig();
 
   if (!provider.configured) {
-    blessed.text({ parent: contentBox, top: 3, left: 2, content: ' No API key configured.', style: { fg: 'red', bold: true } });
-    blessed.text({ parent: contentBox, top: 4, left: 2, content: ' Press 1 to set up AI, 2 for manual scan, Tab for tabs.', style: { fg: 'yellow' } });
+    blessed.text({
+      parent: contentBox,
+      top: 3,
+      left: 2,
+      content: ' No API key configured.',
+      style: { fg: 'red', bold: true },
+    });
+    blessed.text({
+      parent: contentBox,
+      top: 4,
+      left: 2,
+      content: ' Press 1 to set up AI, 2 for manual scan, Tab for tabs.',
+      style: { fg: 'yellow' },
+    });
     screen.render();
     return;
   }
 
-  blessed.text({ parent: contentBox, top: 2, left: 1, content: ` Provider: ${provider.provider.toUpperCase()}  |  Model: ${provider.model}  |  Key: ${provider.apiKey ? provider.apiKey.slice(0, 8) + '...' + provider.apiKey.slice(-4) : ''}`, style: { fg: 'green' } });
-  blessed.text({ parent: contentBox, top: 3, left: 1, content: ' [n] New Agentic Scan  [m] New Manual Scan  [Tab] Browse', style: { fg: 'cyan' } });
+  blessed.text({
+    parent: contentBox,
+    top: 2,
+    left: 1,
+    content: ` Provider: ${provider.provider.toUpperCase()}  |  Model: ${provider.model}  |  Key: ${provider.apiKey ? `${provider.apiKey.slice(0, 8)}...${provider.apiKey.slice(-4)}` : ''}`,
+    style: { fg: 'green' },
+  });
+  blessed.text({
+    parent: contentBox,
+    top: 3,
+    left: 1,
+    content: ' [n] New Agentic Scan  [m] New Manual Scan  [Tab] Browse',
+    style: { fg: 'cyan' },
+  });
 
   const sessions = listSessions();
   const running = sessions.filter((s) => s.status === 'in_progress');
   const completed = sessions.filter((s) => s.status !== 'in_progress');
 
   if (running.length > 0) {
-    blessed.text({ parent: contentBox, top: 5, left: 1, content: ` ⏳ Running: ${running.length} scan(s) — auto-refreshes every 3s`, style: { fg: 'yellow', bold: true } });
+    blessed.text({
+      parent: contentBox,
+      top: 5,
+      left: 1,
+      content: ` ⏳ Running: ${running.length} scan(s) — auto-refreshes every 3s`,
+      style: { fg: 'yellow', bold: true },
+    });
     running.forEach((s, i) => {
       const e = s.startedAt ? Math.floor((Date.now() - new Date(s.startedAt).getTime()) / 1000) : 0;
       const type = s.sessionId.startsWith('manual') ? 'MANUAL' : 'AGENTIC';
-      blessed.text({ parent: contentBox, top: 6 + i, left: 2, content: ` ${type} | ${s.targetUrl.slice(0, 30).padEnd(30)} | Phase: ${s.currentPhase.padEnd(15)} | ${Math.floor(e / 60)}m ${e % 60}s`, style: { fg: 'white' } });
+      blessed.text({
+        parent: contentBox,
+        top: 6 + i,
+        left: 2,
+        content: ` ${type} | ${s.targetUrl.slice(0, 30).padEnd(30)} | Phase: ${s.currentPhase.padEnd(15)} | ${Math.floor(e / 60)}m ${e % 60}s`,
+        style: { fg: 'white' },
+      });
     });
   } else {
-    blessed.text({ parent: contentBox, top: 5, left: 1, content: ' No active scans. [n] New AI scan | [m] New manual scan', style: { fg: 'gray' } });
+    blessed.text({
+      parent: contentBox,
+      top: 5,
+      left: 1,
+      content: ' No active scans. [n] New AI scan | [m] New manual scan',
+      style: { fg: 'gray' },
+    });
   }
 
   if (completed.length > 0) {
-    blessed.text({ parent: contentBox, top: 6 + running.length + 1, left: 1, content: ` ✅ Completed: ${completed.length} scan(s) — [2] Scans to view`, style: { fg: 'green', bold: true } });
+    blessed.text({
+      parent: contentBox,
+      top: 6 + running.length + 1,
+      left: 1,
+      content: ` ✅ Completed: ${completed.length} scan(s) — [2] Scans to view`,
+      style: { fg: 'green', bold: true },
+    });
   }
   screen.render();
 }
@@ -260,12 +411,28 @@ function renderDashboard(): void {
 // ─── NEW SCAN INPUT ────────────────────────────────────────────
 
 function renderNewScanInput(): void {
-  blessed.text({ parent: contentBox, top: 3, left: 2, content: 'Enter target URL or IP to scan:', style: { fg: 'cyan', bold: true } });
+  blessed.text({
+    parent: contentBox,
+    top: 3,
+    left: 2,
+    content: 'Enter target URL or IP to scan:',
+    style: { fg: 'cyan', bold: true },
+  });
   blessed.text({ parent: contentBox, top: 4, left: 2, content: 'Example: https://example.com', style: { fg: 'gray' } });
-  blessed.text({ parent: contentBox, top: 5, left: 2, content: 'Press Enter to start, Escape to cancel', style: { fg: 'gray' } });
+  blessed.text({
+    parent: contentBox,
+    top: 5,
+    left: 2,
+    content: 'Press Enter to start, Escape to cancel',
+    style: { fg: 'gray' },
+  });
 
   const inp = blessed.textbox({
-    parent: contentBox, top: 7, left: 2, width: 76, height: 1,
+    parent: contentBox,
+    top: 7,
+    left: 2,
+    width: 76,
+    height: 1,
     style: { bg: 'blue', fg: 'white', focus: { bg: 'green' } },
     inputOnFocus: true,
   });
@@ -276,7 +443,10 @@ function renderNewScanInput(): void {
   inp.key(['return', 'enter'], async () => {
     const url = inp.getValue().trim();
     if (!url) return;
-    if (!validateUrl(url)) { status('Invalid URL'); return; }
+    if (!validateUrl(url)) {
+      status('Invalid URL');
+      return;
+    }
 
     status(`Starting agentic scan on ${url}...`);
     const result = await startScan(url, false);
@@ -299,7 +469,13 @@ function renderScans(): void {
 
   const sessions = listSessions();
   if (sessions.length === 0) {
-    blessed.text({ parent: contentBox, top: 3, left: 2, content: ' No sessions yet. Press [n] or [m] from Dashboard.', style: { fg: 'gray' } });
+    blessed.text({
+      parent: contentBox,
+      top: 3,
+      left: 2,
+      content: ' No sessions yet. Press [n] or [m] from Dashboard.',
+      style: { fg: 'gray' },
+    });
     screen.render();
     return;
   }
@@ -322,15 +498,33 @@ function renderReports(): void {
   renderTabs(2);
   reportViewMode = 'list';
   currentReportId = '';
-  blessed.text({ parent: contentBox, top: 1, left: 1, content: ' Reports  —  [1-9] Select  [Enter] View  [s] Save  [v] View Logs', style: { fg: 'cyan', bold: true } });
+  blessed.text({
+    parent: contentBox,
+    top: 1,
+    left: 1,
+    content: ' Reports  —  [1-9] Select  [Enter] View  [s] Save  [v] View Logs',
+    style: { fg: 'cyan', bold: true },
+  });
   const reports = listReports();
   if (reports.length === 0) {
-    blessed.text({ parent: contentBox, top: 3, left: 2, content: ' No reports yet. Complete a scan to generate one.', style: { fg: 'gray' } });
+    blessed.text({
+      parent: contentBox,
+      top: 3,
+      left: 2,
+      content: ' No reports yet. Complete a scan to generate one.',
+      style: { fg: 'gray' },
+    });
     screen.render();
     return;
   }
   reports.forEach((r, i) => {
-    blessed.text({ parent: contentBox, top: 2 + i, left: 1, content: ` ${i + 1}. ${r.targetUrl.slice(0, 35).padEnd(35)} | ${(r.fileSize / 1024).toFixed(1)} KB | ${r.sessionId.slice(0, 20)}`, style: { fg: 'white' } });
+    blessed.text({
+      parent: contentBox,
+      top: 2 + i,
+      left: 1,
+      content: ` ${i + 1}. ${r.targetUrl.slice(0, 35).padEnd(35)} | ${(r.fileSize / 1024).toFixed(1)} KB | ${r.sessionId.slice(0, 20)}`,
+      style: { fg: 'white' },
+    });
   });
   screen.render();
 }
@@ -340,7 +534,13 @@ function renderReportContent(reportId: string): void {
   reportViewMode = 'view';
   currentReportId = reportId;
 
-  blessed.text({ parent: contentBox, top: 0, left: 1, content: ' Report  —  [b] Back to List  [s] Save to File  [v] Raw Logs', style: { fg: 'cyan', bold: true } });
+  blessed.text({
+    parent: contentBox,
+    top: 0,
+    left: 1,
+    content: ' Report  —  [b] Back to List  [s] Save to File  [v] Raw Logs',
+    style: { fg: 'cyan', bold: true },
+  });
 
   const content = getReportContent(reportId);
   if (!content) {
@@ -351,11 +551,18 @@ function renderReportContent(reportId: string): void {
 
   // Show report in a scrollable box
   const box = blessed.box({
-    parent: contentBox, top: 1, left: 0, width: '100%', height: '100%-2',
-    content, style: { fg: 'white', bg: 'black' },
-    tags: true, scrollable: true,
+    parent: contentBox,
+    top: 1,
+    left: 0,
+    width: '100%',
+    height: '100%-2',
+    content,
+    style: { fg: 'white', bg: 'black' },
+    tags: true,
+    scrollable: true,
     scrollbar: { ch: ' ', style: { bg: 'white' } },
-    keys: true, vi: true,
+    keys: true,
+    vi: true,
   });
 
   box.focus();
@@ -366,17 +573,30 @@ function renderLogContent(reportId: string): void {
   clear();
   currentReportId = reportId;
 
-  blessed.text({ parent: contentBox, top: 0, left: 1, content: ' Raw Logs  —  [b] Back to Report  [s] Save to File', style: { fg: 'cyan', bold: true } });
+  blessed.text({
+    parent: contentBox,
+    top: 0,
+    left: 1,
+    content: ' Raw Logs  —  [b] Back to Report  [s] Save to File',
+    style: { fg: 'cyan', bold: true },
+  });
 
   const logs = getSessionLogContent(reportId);
   const display = logs || ' No logs found for this session.';
 
   const box = blessed.box({
-    parent: contentBox, top: 1, left: 0, width: '100%', height: '100%-2',
-    content: display, style: { fg: 'white', bg: 'black' },
-    tags: true, scrollable: true,
+    parent: contentBox,
+    top: 1,
+    left: 0,
+    width: '100%',
+    height: '100%-2',
+    content: display,
+    style: { fg: 'white', bg: 'black' },
+    tags: true,
+    scrollable: true,
     scrollbar: { ch: ' ', style: { bg: 'white' } },
-    keys: true, vi: true,
+    keys: true,
+    vi: true,
   });
 
   box.focus();
@@ -388,12 +608,34 @@ function renderLogContent(reportId: string): void {
 function showReportIdPrompt(action: 'view' | 'save'): void {
   clear();
   const label = action === 'view' ? 'View' : 'Save';
-  blessed.text({ parent: contentBox, top: 3, left: 2, content: `Enter Session ID to ${label}:`, style: { fg: 'cyan', bold: true } });
-  blessed.text({ parent: contentBox, top: 4, left: 2, content: 'Example: manual-1234567890-abc123', style: { fg: 'gray' } });
-  blessed.text({ parent: contentBox, top: 5, left: 2, content: 'Find session IDs via pentem list or check Scans tab', style: { fg: 'gray' } });
+  blessed.text({
+    parent: contentBox,
+    top: 3,
+    left: 2,
+    content: `Enter Session ID to ${label}:`,
+    style: { fg: 'cyan', bold: true },
+  });
+  blessed.text({
+    parent: contentBox,
+    top: 4,
+    left: 2,
+    content: 'Example: manual-1234567890-abc123',
+    style: { fg: 'gray' },
+  });
+  blessed.text({
+    parent: contentBox,
+    top: 5,
+    left: 2,
+    content: 'Find session IDs via pentem list or check Scans tab',
+    style: { fg: 'gray' },
+  });
 
   const inp = blessed.textbox({
-    parent: contentBox, top: 7, left: 2, width: 76, height: 1,
+    parent: contentBox,
+    top: 7,
+    left: 2,
+    width: 76,
+    height: 1,
     style: { bg: 'blue', fg: 'white', focus: { bg: 'green' } },
     inputOnFocus: true,
   });
@@ -440,7 +682,7 @@ function renderConfig(): void {
 
   if (provider.configured) {
     lines.push(` Provider: ${provider.provider.toUpperCase()}  [CONFIGURED]`);
-    lines.push(` API Key: ${provider.apiKey ? provider.apiKey.slice(0, 8) + '...' + provider.apiKey.slice(-4) : ''}`);
+    lines.push(` API Key: ${provider.apiKey ? `${provider.apiKey.slice(0, 8)}...${provider.apiKey.slice(-4)}` : ''}`);
     lines.push(` Model: ${provider.model || 'default'}`);
   } else {
     lines.push(' Provider: None');
@@ -457,7 +699,9 @@ function renderConfig(): void {
 
   if (cfg) {
     lines.push(' Config file (~/.pentem/config.yaml):');
-    cfg.split('\n').slice(0, 10).forEach((l) => lines.push(`  ${l}`));
+    for (const l of cfg.split('\n').slice(0, 10)) {
+      lines.push(`  ${l}`);
+    }
   }
 
   lines.push('');
@@ -472,12 +716,28 @@ function renderConfig(): void {
 async function renderManualScanInput(): Promise<void> {
   mode = 'manual-scan-input';
   clear();
-  blessed.text({ parent: contentBox, top: 3, left: 2, content: 'Manual Scan — No API key needed', style: { fg: 'cyan', bold: true } });
+  blessed.text({
+    parent: contentBox,
+    top: 3,
+    left: 2,
+    content: 'Manual Scan — No API key needed',
+    style: { fg: 'cyan', bold: true },
+  });
   blessed.text({ parent: contentBox, top: 4, left: 2, content: 'Enter target URL:', style: { fg: 'white' } });
-  blessed.text({ parent: contentBox, top: 5, left: 2, content: 'Press Enter to start, Escape to cancel', style: { fg: 'gray' } });
+  blessed.text({
+    parent: contentBox,
+    top: 5,
+    left: 2,
+    content: 'Press Enter to start, Escape to cancel',
+    style: { fg: 'gray' },
+  });
 
   const inp = blessed.textbox({
-    parent: contentBox, top: 7, left: 2, width: 76, height: 1,
+    parent: contentBox,
+    top: 7,
+    left: 2,
+    width: 76,
+    height: 1,
     style: { bg: 'blue', fg: 'white', focus: { bg: 'green' } },
     inputOnFocus: true,
   });
@@ -488,7 +748,10 @@ async function renderManualScanInput(): Promise<void> {
   inp.key(['return', 'enter'], async () => {
     const url = inp.getValue().trim();
     if (!url) return;
-    if (!validateUrl(url)) { status('Invalid URL'); return; }
+    if (!validateUrl(url)) {
+      status('Invalid URL');
+      return;
+    }
 
     status(`Manual scanning ${url}...`);
     const result = await startScan(url, true);
@@ -515,21 +778,32 @@ function refreshCurrentView(): void {
   if (running.length > 0) {
     status(`⏳ ${running.length} scan(s) running — ${running.map((s) => s.currentPhase).join(', ')} — [r] Refresh`);
   } else {
-    status(`Ready — [1-4] Tabs  [n] AI Scan  [m] Manual Scan  [q] Quit`);
+    status('Ready — [1-4] Tabs  [n] AI Scan  [m] Manual Scan  [q] Quit');
   }
 
   clear();
   switch (mode) {
-    case 'dashboard': renderDashboard(); break;
-    case 'scans':     renderScans(); break;
-    case 'reports':   renderReports(); break;
-    case 'config':    renderConfig(); break;
+    case 'dashboard':
+      renderDashboard();
+      break;
+    case 'scans':
+      renderScans();
+      break;
+    case 'reports':
+      renderReports();
+      break;
+    case 'config':
+      renderConfig();
+      break;
   }
   screen.render();
 }
 
 function setupKeyboard(): void {
-  screen.key(['q', 'Q', 'C-c'], () => { screen.destroy(); process.exit(0); });
+  screen.key(['q', 'Q', 'C-c'], () => {
+    screen.destroy();
+    process.exit(0);
+  });
 
   screen.key(['tab'], () => {
     if (['api-key-input', 'model-select', 'new-scan-input', 'manual-scan-input'].includes(mode)) return;
@@ -560,7 +834,10 @@ function setupKeyboard(): void {
   });
 
   screen.key(['3'], () => {
-    if (mode === 'setup') { go('config'); return; }
+    if (mode === 'setup') {
+      go('config');
+      return;
+    }
     if (['api-key-input', 'model-select', 'new-scan-input', 'manual-scan-input'].includes(mode)) return;
     go('reports');
   });
@@ -573,7 +850,10 @@ function setupKeyboard(): void {
   screen.key(['n', 'N'], () => {
     if (['api-key-input', 'model-select', 'new-scan-input', 'manual-scan-input'].includes(mode)) return;
     const provider = detectFromEnvOrConfig();
-    if (!provider.configured) { status('Set up an API key first (press 1 at menu)'); return; }
+    if (!provider.configured) {
+      status('Set up an API key first (press 1 at menu)');
+      return;
+    }
     go('new-scan-input');
   });
 
@@ -620,10 +900,10 @@ function setupKeyboard(): void {
   screen.key(['r', 'R'], () => {
     if (mode === 'config') {
       clearPersistedConfig();
-      delete process.env.ANTHROPIC_API_KEY;
-      delete process.env.OPENAI_API_KEY;
-      delete process.env.ANTHROPIC_MODEL;
-      delete process.env.OPENAI_MODEL;
+      process.env.ANTHROPIC_API_KEY = undefined;
+      process.env.OPENAI_API_KEY = undefined;
+      process.env.ANTHROPIC_MODEL = undefined;
+      process.env.OPENAI_MODEL = undefined;
       status('Configuration reset');
       go('setup');
       return;
@@ -647,9 +927,33 @@ export async function startTUI(): Promise<void> {
     fullUnicode: true,
   });
 
-  blessed.box({ parent: screen, top: 0, left: 0, width: '100%', height: 2, style: { fg: 'cyan', bg: 'black', bold: true }, content: `${HEADER}\n${SUB}`, tags: true });
-  contentBox = blessed.box({ parent: screen, top: 2, left: 0, width: '100%', height: '100%-4', style: { bg: 'black' } });
-  statusBar = blessed.box({ parent: screen, bottom: 0, left: 0, width: '100%', height: 1, style: { bg: 'blue', fg: 'white' }, content: '' });
+  blessed.box({
+    parent: screen,
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: 2,
+    style: { fg: 'cyan', bg: 'black', bold: true },
+    content: `${HEADER}\n${SUB}`,
+    tags: true,
+  });
+  contentBox = blessed.box({
+    parent: screen,
+    top: 2,
+    left: 0,
+    width: '100%',
+    height: '100%-4',
+    style: { bg: 'black' },
+  });
+  statusBar = blessed.box({
+    parent: screen,
+    bottom: 0,
+    left: 0,
+    width: '100%',
+    height: 1,
+    style: { bg: 'blue', fg: 'white' },
+    content: '',
+  });
 
   setupKeyboard();
   startAutoRefresh();

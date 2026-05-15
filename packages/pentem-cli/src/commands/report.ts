@@ -1,6 +1,4 @@
 import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import { getReportContent, getSessionLogContent, saveSessionOutput } from '../tui/services/workspace.ts';
 
 export interface ReportOptions {
@@ -11,10 +9,6 @@ export interface ReportOptions {
 }
 
 export async function reportCommand(options: ReportOptions): Promise<void> {
-  const basePath = process.env.PENTEM_LOCAL
-    ? path.resolve(process.cwd(), 'workspaces')
-    : path.join(os.homedir(), '.pentem', 'workspaces');
-
   // Save all output to a directory
   if (options.save) {
     const result = saveSessionOutput(options.sessionId, options.save);

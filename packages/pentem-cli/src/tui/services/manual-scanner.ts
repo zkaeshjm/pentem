@@ -21,12 +21,34 @@ interface Finding {
 }
 
 const COMMON_PATHS = [
-  '/robots.txt', '/sitemap.xml', '/.env', '/admin', '/login', '/wp-admin',
-  '/.git/config', '/config.php', '/backup', '/.well-known/security.txt',
-  '/api', '/graphql', '/swagger.json', '/api-docs', '/.htaccess',
-  '/server-status', '/phpinfo.php', '/crossdomain.xml', '/clientaccesspolicy.xml',
-  '/.DS_Store', '/.gitignore', '/.htpasswd', '/wp-config.php',
-  '/administrator', '/phpmyadmin', '/_debug', '/test', '/dev',
+  '/robots.txt',
+  '/sitemap.xml',
+  '/.env',
+  '/admin',
+  '/login',
+  '/wp-admin',
+  '/.git/config',
+  '/config.php',
+  '/backup',
+  '/.well-known/security.txt',
+  '/api',
+  '/graphql',
+  '/swagger.json',
+  '/api-docs',
+  '/.htaccess',
+  '/server-status',
+  '/phpinfo.php',
+  '/crossdomain.xml',
+  '/clientaccesspolicy.xml',
+  '/.DS_Store',
+  '/.gitignore',
+  '/.htpasswd',
+  '/wp-config.php',
+  '/administrator',
+  '/phpmyadmin',
+  '/_debug',
+  '/test',
+  '/dev',
 ];
 
 const HEADER_CHECKS = [
@@ -43,8 +65,8 @@ const SQLI_PATTERNS = [
   { payload: "'", pattern: /sql|syntax|unclosed|unexpected|mysql|oracle|odbc|driver|queries|database/i },
   { payload: "' OR '1'='1", pattern: /sql|syntax|unclosed|unexpected/i },
   { payload: "' OR 1=1--", pattern: /sql|syntax|unclosed/i },
-  { payload: '\' UNION SELECT NULL--', pattern: /sql|syntax|unclosed/i },
-  { payload: '\' AND SLEEP(5)--', pattern: /sql|syntax|sleep/i },
+  { payload: "' UNION SELECT NULL--", pattern: /sql|syntax|unclosed/i },
+  { payload: "' AND SLEEP(5)--", pattern: /sql|syntax|sleep/i },
 ];
 
 const XSS_PATTERNS = [
@@ -73,8 +95,13 @@ export class ManualScanner {
   private async fetchUrl(url: string, method = 'GET', body?: string): Promise<ScanResult> {
     const start = Date.now();
     const entry: ScanResult = {
-      requestUrl: url, requestMethod: method, requestBody: body,
-      status: 0, headers: {}, body: '', duration: 0,
+      requestUrl: url,
+      requestMethod: method,
+      requestBody: body,
+      status: 0,
+      headers: {},
+      body: '',
+      duration: 0,
     };
     try {
       const fetchOpts: RequestInit = {
@@ -85,7 +112,9 @@ export class ManualScanner {
       if (body && method !== 'GET') fetchOpts.body = body;
       const resp = await fetch(url, fetchOpts);
       const headers: Record<string, string> = {};
-      resp.headers.forEach((v, k) => { headers[k.toLowerCase()] = v; });
+      resp.headers.forEach((v, k) => {
+        headers[k.toLowerCase()] = v;
+      });
       const text = await resp.text();
       entry.status = resp.status;
       entry.headers = headers;
@@ -132,7 +161,13 @@ export class ManualScanner {
       this.addFinding('connectivity', 'high', this.targetUrl, 'Target unreachable', result.error);
       return;
     }
-    this.addFinding('info', 'low', this.targetUrl, 'Target is reachable', `HTTP ${result.status} in ${result.duration}ms`);
+    this.addFinding(
+      'info',
+      'low',
+      this.targetUrl,
+      'Target is reachable',
+      `HTTP ${result.status} in ${result.duration}ms`,
+    );
   }
 
   private async checkSecurityHeaders(): Promise<void> {
@@ -142,23 +177,28 @@ export class ManualScanner {
       if (result.headers[check.name.toLowerCase()]) {
         present.push(check.name);
       } else {
-        this.addFinding('missing-header', check.severity, this.targetUrl, `Missing ${check.desc}`, `${check.name} header not found`);
+        this.addFinding(
+          'missing-header',
+          check.severity,
+          this.targetUrl,
+          `Missing ${check.desc}`,
+          `${check.name} header not found`,
+        );
       }
     }
     if (present.length > 0) {
-      this.addFinding('info', 'low', this.targetUrl, `Security headers present`, `${present.join(', ')}`);
+      this.addFinding('info', 'low', this.targetUrl, 'Security headers present', `${present.join(', ')}`);
     }
   }
 
-  private addFinding(type: string, severity: Finding['severity'], url: string, description: string, detail: string): void {
+  private addFinding(
+    type: string,
+    severity: Finding['severity'],
+    url: string,
+    description: string,
+    detail: string,
+  ): void {
     this.findings.push({ type, severity, url, description, detail });
-    // Print finding live
-    const icons: Record<string, string> = { critical: '🔴', high: '🟠', medium: '🟡', low: '🔵' };
-    const icon = icons[severity] || '⚪';
-    console.log(`  ${icon} [${severity.toUpperCase()}] ${description}`);
-    if (detail && !detail.startsWith('HTTP') && !detail.startsWith('${')) {
-      console.log(`      ${detail}`);
-    }
   }
 
   private async checkCommonPaths(): Promise<void> {
@@ -166,20 +206,39 @@ export class ManualScanner {
     for (const p of COMMON_PATHS) {
       const url = `${this.baseUrl}${p}`;
       const result = await this.fetchUrl(url);
-      const statusStr = result.status === 200 ? 'OK' : result.status === 403 ? '403' : result.status === 301 || result.status === 302 ? '->' : `${result.status}`;
+      const statusStr =
+        result.status === 200
+          ? 'OK'
+          : result.status === 403
+            ? '403'
+            : result.status === 301 || result.status === 302
+              ? '->'
+              : `${result.status}`;
       process.stdout.write(`    ${p.padEnd(35)} ${statusStr}\r`);
       if (result.status === 200) {
-        this.addFinding('exposed-path', 'high', url, `Exposed path: ${p}`, `HTTP 200 - may contain sensitive information`);
+        this.addFinding(
+          'exposed-path',
+          'high',
+          url,
+          `Exposed path: ${p}`,
+          'HTTP 200 - may contain sensitive information',
+        );
         found++;
       } else if (result.status === 403) {
         this.addFinding('info', 'low', url, `Restricted: ${p}`, 'HTTP 403 - exists but protected');
       } else if (result.status === 301 || result.status === 302) {
-        this.addFinding('info', 'low', url, `Redirect: ${p}`, `HTTP ${result.status} → ${result.headers.location || 'unknown'}`);
+        this.addFinding(
+          'info',
+          'low',
+          url,
+          `Redirect: ${p}`,
+          `HTTP ${result.status} → ${result.headers.location || 'unknown'}`,
+        );
       }
     }
     console.log(`    Done — ${found} exposed path(s) found`);
     if (found > 0) {
-      console.log(`    ⚠ Review exposed paths in the report`);
+      console.log('    ⚠ Review exposed paths in the report');
     }
   }
 
@@ -193,14 +252,20 @@ export class ManualScanner {
       process.stdout.write(`    SQLi test: ${sqli.payload.slice(0, 25).padEnd(27)}\r`);
       const result = await this.fetchUrl(testUrl);
       if (sqli.pattern.test(result.body) || result.status === 500) {
-        this.addFinding('sqli', 'critical', testUrl, `Potential SQL Injection`, `Payload: ${sqli.payload} - Error/pattern match in response`);
+        this.addFinding(
+          'sqli',
+          'critical',
+          testUrl,
+          'Potential SQL Injection',
+          `Payload: ${sqli.payload} - Error/pattern match in response`,
+        );
         found++;
       }
     }
     if (found > 0) {
       console.log(`    ⚠ ${found} SQLi indicator(s) found — check report`);
     } else {
-      console.log(`    No SQL injection indicators detected`);
+      console.log('    No SQL injection indicators detected');
     }
   }
 
@@ -211,27 +276,32 @@ export class ManualScanner {
       process.stdout.write(`    XSS test: ${xss.payload.slice(0, 25).padEnd(27)}\r`);
       const result = await this.fetchUrl(testUrl);
       if (xss.pattern.test(result.body)) {
-        this.addFinding('xss', 'high', testUrl, `Potential XSS`, `Payload: ${xss.payload} reflected in response`);
+        this.addFinding('xss', 'high', testUrl, 'Potential XSS', `Payload: ${xss.payload} reflected in response`);
         found++;
       }
     }
     if (found > 0) {
       console.log(`    ⚠ ${found} XSS indicator(s) found — check report`);
     } else {
-      console.log(`    No XSS indicators detected`);
+      console.log('    No XSS indicators detected');
     }
   }
 
   private async detectTechnologies(): Promise<void> {
     const result = await this.fetchUrl(this.targetUrl);
-    if (result.headers['server']) this.addFinding('info', 'low', this.targetUrl, `Server: ${result.headers['server']}`, '');
-    if (result.headers['x-powered-by']) this.addFinding('info', 'low', this.targetUrl, `Powered-By: ${result.headers['x-powered-by']}`, '');
-    if (result.headers['set-cookie']) this.addFinding('info', 'low', this.targetUrl, `Cookies set: ${result.headers['set-cookie']}`, '');
-    if (result.headers['www-authenticate']) this.addFinding('info', 'medium', this.targetUrl, `Authentication required`, `WWW-Authenticate: ${result.headers['www-authenticate']}`);
-  }
-
-  private addFinding(type: string, severity: Finding['severity'], url: string, description: string, detail: string): void {
-    this.findings.push({ type, severity, url, description, detail });
+    if (result.headers.server) this.addFinding('info', 'low', this.targetUrl, `Server: ${result.headers.server}`, '');
+    if (result.headers['x-powered-by'])
+      this.addFinding('info', 'low', this.targetUrl, `Powered-By: ${result.headers['x-powered-by']}`, '');
+    if (result.headers['set-cookie'])
+      this.addFinding('info', 'low', this.targetUrl, `Cookies set: ${result.headers['set-cookie']}`, '');
+    if (result.headers['www-authenticate'])
+      this.addFinding(
+        'info',
+        'medium',
+        this.targetUrl,
+        'Authentication required',
+        `WWW-Authenticate: ${result.headers['www-authenticate']}`,
+      );
   }
 
   generateLogContent(): string {
@@ -250,7 +320,9 @@ export class ManualScanner {
       lines.push(`**Status:** ${r.status} | **Duration:** ${r.duration}ms`);
       if (r.error) lines.push(`**Error:** ${r.error}`);
       lines.push('**Response Headers:**');
-      Object.entries(r.headers).slice(0, 15).forEach(([k, v]) => lines.push(`  ${k}: ${v}`));
+      for (const [k, v] of Object.entries(r.headers).slice(0, 15)) {
+        lines.push(`  ${k}: ${v}`);
+      }
       if (Object.keys(r.headers).length > 15) lines.push(`  ... (${Object.keys(r.headers).length - 15} more headers)`);
       lines.push('');
       if (r.body) {
@@ -269,14 +341,16 @@ export class ManualScanner {
 
   private generateReport(): string {
     const severityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
-    const sorted = [...this.findings].sort((a, b) => (severityOrder[a.severity] || 99) - (severityOrder[b.severity] || 99));
+    const sorted = [...this.findings].sort(
+      (a, b) => (severityOrder[a.severity] || 99) - (severityOrder[b.severity] || 99),
+    );
 
     const lines = [
       '# Pentem Manual Security Scan Report',
       '',
       `**Target:** ${this.targetUrl}`,
       `**Date:** ${new Date().toISOString()}`,
-      `**Mode:** Manual (no AI)`,
+      '**Mode:** Manual (no AI)',
       '',
       '## Summary',
       '',
@@ -290,7 +364,12 @@ export class ManualScanner {
       '## Findings by Severity',
       '',
       ...sorted.map((f, i) => {
-        const sevMap: Record<string, string> = { critical: '🔴 CRITICAL', high: '🟠 HIGH', medium: '🟡 MEDIUM', low: '🔵 LOW' };
+        const sevMap: Record<string, string> = {
+          critical: '🔴 CRITICAL',
+          high: '🟠 HIGH',
+          medium: '🟡 MEDIUM',
+          low: '🔵 LOW',
+        };
         return [
           `### ${i + 1}. [${sevMap[f.severity] || f.severity}] ${f.description}`,
           `**URL:** ${f.url}`,
@@ -304,22 +383,22 @@ export class ManualScanner {
       '',
       ...(this.findings.some((f) => f.severity === 'critical' || f.severity === 'high')
         ? [
-          '- Address high/critical findings immediately',
-          '- Implement missing security headers (HSTS, CSP, X-Frame-Options)',
-          '- Secure exposed paths and directories',
-          '- Validate and sanitize all user inputs',
-          '- Run a full agentic AI scan for deeper analysis',
-        ]
+            '- Address high/critical findings immediately',
+            '- Implement missing security headers (HSTS, CSP, X-Frame-Options)',
+            '- Secure exposed paths and directories',
+            '- Validate and sanitize all user inputs',
+            '- Run a full agentic AI scan for deeper analysis',
+          ]
         : [
-          '- Review medium-severity findings',
-          '- Add recommended security headers',
-          '- Monitor exposed paths for changes',
-        ]),
+            '- Review medium-severity findings',
+            '- Add recommended security headers',
+            '- Monitor exposed paths for changes',
+          ]),
       '',
       '## Raw Scan Log',
       '',
-      `Full request/response log saved alongside this report.`,
-      `View logs with: pentem report <session-id> --logs`,
+      'Full request/response log saved alongside this report.',
+      'View logs with: pentem report <session-id> --logs',
       '',
       '---',
       '*Generated by Pentem Manual Scanner*',

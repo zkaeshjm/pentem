@@ -1,8 +1,8 @@
+import { execSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { EventEmitter } from 'node:events';
-import { execSync } from 'node:child_process';
 import type { AgentProgress } from './agent-runner.ts';
 import { DirectAgentPipeline } from './direct-agent.ts';
 import { ManualScanner } from './manual-scanner.ts';
@@ -18,7 +18,12 @@ export interface ScanStartResult {
 export const scanEvents = new EventEmitter();
 
 export function validateUrl(url: string): boolean {
-  try { new URL(url); return true; } catch { return false; }
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function getWorkspacePath(): string {
@@ -68,35 +73,40 @@ async function startManualScan(url: string, workspacePath: string): Promise<Scan
     const scanner = new ManualScanner(url);
 
     // Run async and emit progress
-    scanner.run().then((result) => {
-      // Save report
-      const auditDir = path.join(workspacePath, sessionId, 'audit');
-      fs.mkdirSync(auditDir, { recursive: true });
-      fs.writeFileSync(path.join(auditDir, 'final-report.md'), result.report, 'utf-8');
+    scanner
+      .run()
+      .then((result) => {
+        // Save report
+        const auditDir = path.join(workspacePath, sessionId, 'audit');
+        fs.mkdirSync(auditDir, { recursive: true });
+        fs.writeFileSync(path.join(auditDir, 'final-report.md'), result.report, 'utf-8');
 
-      // Update session
-      session.status = result.findings.some((f) => f.severity === 'critical' || f.severity === 'high') ? 'completed' : 'completed';
-      session.completedAt = new Date().toISOString();
-      session.completedAgents = ['manual-scanner'];
-      fs.writeFileSync(path.join(sessionsDir, `${sessionId}.json`), JSON.stringify(session, null, 2));
+        // Update session
+        session.status = result.findings.some((f) => f.severity === 'critical' || f.severity === 'high')
+          ? 'completed'
+          : 'completed';
+        session.completedAt = new Date().toISOString();
+        session.completedAgents = ['manual-scanner'];
+        fs.writeFileSync(path.join(sessionsDir, `${sessionId}.json`), JSON.stringify(session, null, 2));
 
-      scanEvents.emit('scanProgress', sessionId, {
-        phase: 'report',
-        agent: 'system',
-        status: 'completed',
-        message: `Manual scan complete — ${result.findings.length} findings`,
-      } as AgentProgress);
-    }).catch((err) => {
-      session.status = 'failed';
-      session.completedAt = new Date().toISOString();
-      fs.writeFileSync(path.join(sessionsDir, `${sessionId}.json`), JSON.stringify(session, null, 2));
-      scanEvents.emit('scanProgress', sessionId, {
-        phase: 'error',
-        agent: 'system',
-        status: 'failed',
-        message: `Manual scan error: ${err.message}`,
-      } as AgentProgress);
-    });
+        scanEvents.emit('scanProgress', sessionId, {
+          phase: 'report',
+          agent: 'system',
+          status: 'completed',
+          message: `Manual scan complete — ${result.findings.length} findings`,
+        } as AgentProgress);
+      })
+      .catch((err) => {
+        session.status = 'failed';
+        session.completedAt = new Date().toISOString();
+        fs.writeFileSync(path.join(sessionsDir, `${sessionId}.json`), JSON.stringify(session, null, 2));
+        scanEvents.emit('scanProgress', sessionId, {
+          phase: 'error',
+          agent: 'system',
+          status: 'failed',
+          message: `Manual scan error: ${err.message}`,
+        } as AgentProgress);
+      });
 
     return { success: true, sessionId, manual: true };
   } catch (err) {
@@ -104,15 +114,23 @@ async function startManualScan(url: string, workspacePath: string): Promise<Scan
   }
 }
 
-async function startDirectScan(url: string, provider: any, workspacePath: string): Promise<ScanStartResult> {
+async function startDirectScan(
+  url: string,
+  provider: { provider: string; apiKey?: string; model?: string; baseUrl?: string },
+  workspacePath: string,
+): Promise<ScanStartResult> {
   try {
-    const pipeline = new DirectAgentPipeline({
-      type: provider.provider as any,
-      configured: true,
-      apiKey: provider.apiKey,
-      baseUrl: provider.baseUrl,
-      model: provider.model,
-    }, url, workspacePath);
+    const pipeline = new DirectAgentPipeline(
+      {
+        type: provider.provider as import('../../providers.ts').ProviderType,
+        configured: true,
+        apiKey: provider.apiKey,
+        baseUrl: provider.baseUrl,
+        model: provider.model,
+      },
+      url,
+      workspacePath,
+    );
 
     const session = pipeline.getSession();
 
@@ -122,7 +140,9 @@ async function startDirectScan(url: string, provider: any, workspacePath: string
 
     pipeline.run().catch((err: Error) => {
       scanEvents.emit('scanProgress', session.sessionId, {
-        phase: 'error', agent: 'system', status: 'failed',
+        phase: 'error',
+        agent: 'system',
+        status: 'failed',
         message: `Pipeline error: ${err.message}`,
       } as AgentProgress);
     });
@@ -148,7 +168,9 @@ export function stopScan(sessionId: string): void {
   // Clean up Docker if it was used
   const composeFile = path.join(workspacePath, '.pentem', 'docker-compose.yml');
   if (fs.existsSync(composeFile)) {
-    try { execSync(`docker compose -f "${composeFile}" down`, { stdio: 'pipe', timeout: 30000 }); } catch {}
+    try {
+      execSync(`docker compose -f "${composeFile}" down`, { stdio: 'pipe', timeout: 30000 });
+    } catch {}
   }
 }
 
@@ -156,6 +178,8 @@ export function cleanStoppedScans(): void {
   const workspacePath = getWorkspacePath();
   const composeFile = path.join(workspacePath, '.pentem', 'docker-compose.yml');
   if (fs.existsSync(composeFile)) {
-    try { execSync(`docker compose -f "${composeFile}" down`, { stdio: 'pipe', timeout: 30000 }); } catch {}
+    try {
+      execSync(`docker compose -f "${composeFile}" down`, { stdio: 'pipe', timeout: 30000 });
+    } catch {}
   }
 }

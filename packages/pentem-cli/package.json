@@ -10,9 +10,7 @@
   "bin": {
     "pentem": "./dist/index.js"
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "build": "tsdown",
     "typecheck": "tsc --noEmit",

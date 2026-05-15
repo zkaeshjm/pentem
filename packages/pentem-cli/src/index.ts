@@ -22,7 +22,20 @@ async function main(): Promise<void> {
       const outputIndex = args.indexOf('--output');
       const output = outputIndex >= 0 ? args[outputIndex + 1] : undefined;
       // URL is the first non-flag argument (skip command at args[0])
-      const url = args.slice(1).find((a) => a !== '--manual' && a !== '-m' && !a.startsWith('--config') && a !== config && !a.startsWith('--save-logs') && a !== saveLogs && !a.startsWith('--output') && a !== output && !a.startsWith('-'));
+      const url = args
+        .slice(1)
+        .find(
+          (a) =>
+            a !== '--manual' &&
+            a !== '-m' &&
+            !a.startsWith('--config') &&
+            a !== config &&
+            !a.startsWith('--save-logs') &&
+            a !== saveLogs &&
+            !a.startsWith('--output') &&
+            a !== output &&
+            !a.startsWith('-'),
+        );
       if (!url) {
         console.error('Usage: pentem scan <target-url> [--manual] [--output <path>] [--save-logs <dir>]');
         process.exit(1);

@@ -1,6 +1,6 @@
+import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { EventEmitter } from 'node:events';
 import type { ProviderConfig } from '../../providers.ts';
 
 export interface ToolCall {
@@ -45,11 +45,23 @@ export class AgentRunner extends EventEmitter {
     this.on('progress', cb);
   }
 
-  private emitProgress(phase: string, agent: string, status: AgentProgress['status'], message: string, percent?: number): void {
+  private emitProgress(
+    phase: string,
+    agent: string,
+    status: AgentProgress['status'],
+    message: string,
+    percent?: number,
+  ): void {
     this.emit('progress', { phase, agent, status, message, percent } as AgentProgress);
   }
 
-  async runAgent(agentType: string, category: string, targetUrl: string, context: string, outputDir: string): Promise<{ analysis: string; queue: string }> {
+  async runAgent(
+    agentType: string,
+    category: string,
+    targetUrl: string,
+    context: string,
+    outputDir: string,
+  ): Promise<{ analysis: string; queue: string }> {
     this.emitProgress(category, agentType, 'started', `Starting ${category} ${agentType} analysis...`, 0);
 
     const fsDir = path.join(outputDir, `${category}-${agentType}`, 'deliverables');
@@ -111,7 +123,11 @@ Always think step by step. First explore, then analyze, then report.`;
             properties: {
               url: { type: 'string', description: 'The URL to fetch' },
               method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'DELETE'], default: 'GET' },
-              headers: { type: 'object', description: 'Optional HTTP headers', additionalProperties: { type: 'string' } },
+              headers: {
+                type: 'object',
+                description: 'Optional HTTP headers',
+                additionalProperties: { type: 'string' },
+              },
               body: { type: 'string', description: 'Request body for POST/PUT' },
             },
             required: ['url'],
@@ -120,20 +136,31 @@ Always think step by step. First explore, then analyze, then report.`;
       },
     ];
 
-    const messages: Array<{ role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_call_id?: string }> = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userContent },
-    ];
+    const messages: Array<{ role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_call_id?: string }> =
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent },
+      ];
 
     let analysis = '';
     const findings: string[] = [];
 
     for (let turn = 0; turn < maxTurns; turn++) {
-      this.emitProgress(category, agentType, 'progress', `Analysis turn ${turn + 1}/${maxTurns}...`, Math.round(((turn + 1) / maxTurns) * 80));
+      this.emitProgress(
+        category,
+        agentType,
+        'progress',
+        `Analysis turn ${turn + 1}/${maxTurns}...`,
+        Math.round(((turn + 1) / maxTurns) * 80),
+      );
 
       const response = await openai.chat.completions.create({
         model,
-        messages: messages as any,
+        messages: messages as Array<{
+          role: 'system' | 'user' | 'assistant' | 'tool';
+          content: string;
+          tool_call_id?: string;
+        }>,
         tools,
         tool_choice: 'auto',
         max_tokens: 4000,
@@ -151,7 +178,7 @@ Always think step by step. First explore, then analyze, then report.`;
             const result = await this.executeFetch(args);
             findings.push(`[${args.method ?? 'GET'}] ${args.url}: ${result.status}`);
             messages.push({
-              role: 'tool' as any,
+              role: 'tool',
               tool_call_id: tc.id,
               content: JSON.stringify(result),
             });
@@ -212,15 +239,22 @@ Always think step by step. First explore, then analyze, then report.`;
       },
     ];
 
-    const messages: Array<{ role: 'user' | 'assistant'; content: string | Array<{ type: string; [key: string]: unknown }> }> = [
-      { role: 'user', content: userContent },
-    ];
+    const messages: Array<{
+      role: 'user' | 'assistant';
+      content: string | Array<{ type: string; [key: string]: unknown }>;
+    }> = [{ role: 'user', content: userContent }];
 
     let analysis = '';
     const findings: string[] = [];
 
     for (let turn = 0; turn < 25; turn++) {
-      this.emitProgress(category, agentType, 'progress', `Analysis turn ${turn + 1}/25...`, Math.round(((turn + 1) / 25) * 80));
+      this.emitProgress(
+        category,
+        agentType,
+        'progress',
+        `Analysis turn ${turn + 1}/25...`,
+        Math.round(((turn + 1) / 25) * 80),
+      );
 
       const body = {
         model,
@@ -261,7 +295,9 @@ Always think step by step. First explore, then analyze, then report.`;
         } else if (block.type === 'tool_use' && block.name === 'fetch_url') {
           hasToolUse = true;
           const result = await this.executeFetch(block.input as Record<string, unknown>);
-          findings.push(`[${(block.input as any)?.method ?? 'GET'}] ${(block.input as any)?.url}: ${result.status}`);
+          const inputMethod = block.input?.method as string | undefined;
+          const inputUrl = block.input?.url as string | undefined;
+          findings.push(`[${inputMethod ?? 'GET'}] ${inputUrl ?? '?'}: ${result.status}`);
           messages.push({
             role: 'user',
             content: [{ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) }],
@@ -291,7 +327,9 @@ Always think step by step. First explore, then analyze, then report.`;
     return { analysis: analysisPath, queue: queuePath };
   }
 
-  private async executeFetch(args: Record<string, unknown>): Promise<{ status: number; headers: Record<string, string>; body: string; error?: string }> {
+  private async executeFetch(
+    args: Record<string, unknown>,
+  ): Promise<{ status: number; headers: Record<string, string>; body: string; error?: string }> {
     const url = args.url as string;
     const method = (args.method as string) || 'GET';
     const headers = (args.headers as Record<string, string>) || {};
@@ -303,18 +341,31 @@ Always think step by step. First explore, then analyze, then report.`;
 
       const resp = await fetch(url, fetchOpts);
       const respHeaders: Record<string, string> = {};
-      resp.headers.forEach((v, k) => { respHeaders[k] = v; });
+      resp.headers.forEach((v, k) => {
+        respHeaders[k] = v;
+      });
 
       const text = await resp.text();
-      const truncated = text.length > 10000 ? text.slice(0, 10000) + '\n... [truncated]' : text;
+      const truncated = text.length > 10000 ? `${text.slice(0, 10000)}\n... [truncated]` : text;
 
       return { status: resp.status, headers: respHeaders, body: truncated };
     } catch (err) {
-      return { status: 0, headers: {}, body: '', error: `Fetch error: ${err instanceof Error ? err.message : String(err)}` };
+      return {
+        status: 0,
+        headers: {},
+        body: '',
+        error: `Fetch error: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
   }
 
-  private formatReport(agentType: string, category: string, targetUrl: string, analysis: string, findings: string[]): string {
+  private formatReport(
+    agentType: string,
+    category: string,
+    targetUrl: string,
+    analysis: string,
+    findings: string[],
+  ): string {
     const lines = [
       `# ${category.toUpperCase()} - ${agentType.toUpperCase()}`,
       `**Target:** ${targetUrl}`,
@@ -330,7 +381,7 @@ Always think step by step. First explore, then analyze, then report.`;
       analysis || 'Analysis was not completed.',
       '',
       '---',
-      `*Generated by Pentem AI Agent*`,
+      '*Generated by Pentem AI Agent*',
     ];
     return lines.join('\n');
   }
@@ -360,6 +411,9 @@ Demonstrate privilege escalation or unauthorized data access.`,
       'exploit-ssrf': `Exploit confirmed SSRF vulnerabilities at ${'{{target_url}}'}.
 Access internal services and extract sensitive information.`,
     };
-    return prompts[`${category}-${agentType}`] || `Analyze ${'{{target_url}}'} for security vulnerabilities in the ${agentType} category.`;
+    return (
+      prompts[`${category}-${agentType}`] ||
+      `Analyze ${'{{target_url}}'} for security vulnerabilities in the ${agentType} category.`
+    );
   }
 }

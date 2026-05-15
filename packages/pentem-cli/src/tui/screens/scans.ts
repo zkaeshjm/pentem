@@ -3,9 +3,9 @@ const require = createRequire(import.meta.url);
 const blessed = require('blessed');
 
 import type { Widgets } from 'blessed';
-import type { App, TUIScreen, ScreenId } from '../app.ts';
-import { listSessions, getSession, type SessionData } from '../services/workspace.ts';
-import { startScan, stopScan, cleanStoppedScans, scanEvents } from '../services/scanner.ts';
+import type { App, ScreenId, TUIScreen } from '../app.ts';
+import { cleanStoppedScans, scanEvents, startScan, stopScan } from '../services/scanner.ts';
+import { type SessionData, getSession, listSessions } from '../services/workspace.ts';
 
 export class ScansScreen implements TUIScreen {
   id: ScreenId = 'scans';
@@ -24,33 +24,68 @@ export class ScansScreen implements TUIScreen {
     this.box = blessed.box({ parent, top: 0, left: 0, width: '100%', height: '100%', style: { bg: 'black' } });
 
     this.statusText = blessed.text({
-      parent: this.box, top: 0, left: 0, width: '100%', height: 1,
+      parent: this.box,
+      top: 0,
+      left: 0,
+      width: '100%',
+      height: 1,
       style: { fg: 'cyan', bold: true },
       content: ' [n] New Scan  [d] Details  [s] Stop  [c] Clean  [r] Refresh',
     });
 
     this.list = blessed.list({
-      parent: this.box, top: 1, left: 0, width: '100%', height: '100%-2',
+      parent: this.box,
+      top: 1,
+      left: 0,
+      width: '100%',
+      height: '100%-2',
       style: { fg: 'white', bg: 'black', selected: { bg: 'blue', fg: 'white' }, item: { bg: 'black', fg: 'white' } },
-      keys: true, vi: true, tags: true,
+      keys: true,
+      vi: true,
+      tags: true,
       scrollbar: { ch: ' ', style: { bg: 'blue' } },
     });
 
-    this.app.screen.key(['n', 'N'], () => { if (this.isInputMode) return; this.showInputPrompt(); });
-    this.app.screen.key(['d', 'D'], () => { if (this.isInputMode) return; this.showDetails(); });
-    this.app.screen.key(['s', 'S'], () => { if (this.isInputMode) return; this.stopSelected(); });
-    this.app.screen.key(['c', 'C'], () => { if (this.isInputMode) return; this.cleanStale(); });
-    this.app.screen.key(['r', 'R'], () => { if (this.isInputMode) return; this.refresh(); });
+    this.app.screen.key(['n', 'N'], () => {
+      if (this.isInputMode) return;
+      this.showInputPrompt();
+    });
+    this.app.screen.key(['d', 'D'], () => {
+      if (this.isInputMode) return;
+      this.showDetails();
+    });
+    this.app.screen.key(['s', 'S'], () => {
+      if (this.isInputMode) return;
+      this.stopSelected();
+    });
+    this.app.screen.key(['c', 'C'], () => {
+      if (this.isInputMode) return;
+      this.cleanStale();
+    });
+    this.app.screen.key(['r', 'R'], () => {
+      if (this.isInputMode) return;
+      this.refresh();
+    });
   }
 
-  activate(): void { this.box.show(); this.refresh(); this.list.focus(); this.app.screen.render(); }
-  deactivate(): void { this.closePrompt(); this.closeDetail(); this.box.hide(); }
+  activate(): void {
+    this.box.show();
+    this.refresh();
+    this.list.focus();
+    this.app.screen.render();
+  }
+  deactivate(): void {
+    this.closePrompt();
+    this.closeDetail();
+    this.box.hide();
+  }
 
   refresh(): void {
     const sessions = listSessions();
-    this.list.setItems(sessions.length === 0
-      ? [' No sessions found. Press [n] to start a new scan.']
-      : sessions.map((s) => this.formatSession(s))
+    this.list.setItems(
+      sessions.length === 0
+        ? [' No sessions found. Press [n] to start a new scan.']
+        : sessions.map((s) => this.formatSession(s)),
     );
   }
 
@@ -65,29 +100,43 @@ export class ScansScreen implements TUIScreen {
 
     this.inputBox = blessed.box({
       parent: this.app.screen,
-      top: 'center', left: 'center',
-      width: 60, height: 5,
+      top: 'center',
+      left: 'center',
+      width: 60,
+      height: 5,
       style: { bg: 'black', border: { type: 'line', fg: 'cyan' } },
       border: { type: 'line', fg: 'cyan' },
     });
 
     blessed.text({
-      parent: this.inputBox!, top: 0, left: 2,
-      content: 'Enter target URL to scan:', style: { fg: 'white', bold: true },
+      parent: this.inputBox!,
+      top: 0,
+      left: 2,
+      content: 'Enter target URL to scan:',
+      style: { fg: 'white', bold: true },
     });
 
     blessed.text({
-      parent: this.inputBox!, top: 1, left: 2,
-      content: 'Press Enter to start, Escape to cancel', style: { fg: 'gray' },
+      parent: this.inputBox!,
+      top: 1,
+      left: 2,
+      content: 'Press Enter to start, Escape to cancel',
+      style: { fg: 'gray' },
     });
 
     this.inputField = blessed.textbox({
-      parent: this.inputBox!, top: 2, left: 2, width: 54, height: 1,
+      parent: this.inputBox!,
+      top: 2,
+      left: 2,
+      width: 54,
+      height: 1,
       style: { bg: 'blue', fg: 'white', focus: { bg: 'green' } },
       inputOnFocus: true,
     });
 
-    this.app.screen.key(['escape'], () => { if (this.isInputMode) this.closePrompt(); });
+    this.app.screen.key(['escape'], () => {
+      if (this.isInputMode) this.closePrompt();
+    });
     this.inputField.key(['return'], () => this.handleStart());
 
     this.inputField.focus();
@@ -143,7 +192,10 @@ export class ScansScreen implements TUIScreen {
     this.closeDetail();
     this.detailBox = blessed.box({
       parent: this.app.screen,
-      top: 3, left: 'center', width: 70, height: 16,
+      top: 3,
+      left: 'center',
+      width: 70,
+      height: 16,
       style: { bg: 'black', border: { type: 'line', fg: 'yellow' } },
       border: { type: 'line', fg: 'yellow' },
       content: [

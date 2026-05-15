@@ -50,7 +50,7 @@ export function loadPersistedConfig(): PersistentConfig | null {
     const cfg: Partial<PersistentConfig> = {};
     for (const line of lines) {
       const m = line.match(/^\s*(\w+):\s*(.+)\s*$/);
-      if (m) (cfg as any)[m[1]] = m[2].replace(/^["']|["']$/g, '');
+      if (m) (cfg as Record<string, string | undefined>)[m[1]] = m[2].replace(/^["']|["']$/g, '');
     }
     if (cfg.provider && cfg.apiKey) return cfg as PersistentConfig;
     return null;
@@ -76,7 +76,14 @@ export function clearPersistedConfig(): void {
   if (fs.existsSync(p)) fs.unlinkSync(p);
 }
 
-export function detectFromEnvOrConfig(): { configured: boolean; provider: string; apiKey?: string; model?: string; baseUrl?: string; error?: string } {
+export function detectFromEnvOrConfig(): {
+  configured: boolean;
+  provider: string;
+  apiKey?: string;
+  model?: string;
+  baseUrl?: string;
+  error?: string;
+} {
   // Check env vars first
   let provider = '';
   let apiKey = '';
@@ -123,7 +130,11 @@ export function detectFromEnvOrConfig(): { configured: boolean; provider: string
   }
 
   if (configured.length === 0) {
-    return { configured: false, provider: '', error: 'No provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.' };
+    return {
+      configured: false,
+      provider: '',
+      error: 'No provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.',
+    };
   }
   if (configured.length > 1) {
     return {

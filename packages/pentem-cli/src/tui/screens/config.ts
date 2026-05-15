@@ -3,7 +3,7 @@ const require = createRequire(import.meta.url);
 const blessed = require('blessed');
 
 import type { Widgets } from 'blessed';
-import type { App, TUIScreen, ScreenId } from '../app.ts';
+import type { App, ScreenId, TUIScreen } from '../app.ts';
 import { getConfigContent, getConfigPath, writeConfig } from '../services/workspace.ts';
 
 export class ConfigScreen implements TUIScreen {
@@ -18,7 +18,11 @@ export class ConfigScreen implements TUIScreen {
     this.box = blessed.box({ parent, top: 0, left: 0, width: '100%', height: '100%', style: { bg: 'black' } });
 
     blessed.text({
-      parent: this.box, top: 0, left: 0, width: '100%', height: 1,
+      parent: this.box,
+      top: 0,
+      left: 0,
+      width: '100%',
+      height: 1,
       style: { fg: 'cyan', bold: true },
       content: ' [Ctrl+S] Save  [r] Reload  [Esc] Exit Edit',
     });
@@ -28,7 +32,9 @@ export class ConfigScreen implements TUIScreen {
 
     if (!content || !configPath) {
       blessed.text({
-        parent: this.box, top: 3, left: 2,
+        parent: this.box,
+        top: 3,
+        left: 2,
         content: ' No configuration file found.\n\n Run "pentem config init" to create one.',
         style: { fg: 'yellow' },
       });
@@ -36,27 +42,43 @@ export class ConfigScreen implements TUIScreen {
     }
 
     blessed.text({
-      parent: this.box, top: 1, left: 0,
+      parent: this.box,
+      top: 1,
+      left: 0,
       content: ` ${configPath}`,
       style: { fg: 'green' },
     });
 
     this.textarea = blessed.textarea({
-      parent: this.box, top: 2, left: 0, width: '100%', height: '100%-3',
+      parent: this.box,
+      top: 2,
+      left: 0,
+      width: '100%',
+      height: '100%-3',
       style: { bg: 'black', fg: 'white', focus: { bg: '#0a0a0a' } },
       content,
-      keys: true, vi: true,
+      keys: true,
+      vi: true,
       scrollable: true,
       scrollbar: { ch: ' ', style: { bg: 'blue' } },
       inputOnFocus: true,
     });
 
     this.textarea.key(['C-s'], () => this.save());
-    this.app.screen.key(['r', 'R'], () => { if (!this.textarea) return; this.reload(); });
+    this.app.screen.key(['r', 'R'], () => {
+      if (!this.textarea) return;
+      this.reload();
+    });
   }
 
-  activate(): void { this.box.show(); this.textarea?.focus(); this.app.screen.render(); }
-  deactivate(): void { this.box.hide(); }
+  activate(): void {
+    this.box.show();
+    this.textarea?.focus();
+    this.app.screen.render();
+  }
+  deactivate(): void {
+    this.box.hide();
+  }
 
   refresh(): void {}
 
@@ -69,6 +91,9 @@ export class ConfigScreen implements TUIScreen {
 
   private reload(): void {
     const c = getConfigContent();
-    if (c && this.textarea) { this.textarea.setValue(c); this.app.setStatus('Configuration reloaded'); }
+    if (c && this.textarea) {
+      this.textarea.setValue(c);
+      this.app.setStatus('Configuration reloaded');
+    }
   }
 }
