@@ -8,7 +8,6 @@ RUN apk update && apk add --no-cache \
   ruby \
   go \
   nmap \
-  nmap-scripts \
   chromium \
   nss \
   freetype \
@@ -57,7 +56,6 @@ RUN apk update && apk add --no-cache \
   ruby \
   go \
   nmap \
-  nmap-scripts \
   chromium \
   nss \
   freetype \
