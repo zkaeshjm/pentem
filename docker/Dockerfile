@@ -3,6 +3,7 @@ FROM cgr.dev/chainguard/wolfi-base:latest AS builder
 
 RUN apk update && apk add --no-cache \
   nodejs-20 \
+  npm \
   python3 \
   py3-pip \
   ruby \
@@ -29,20 +30,30 @@ RUN git clone https://github.com/urbanadventurer/WhatWeb.git /opt/whatweb && \
 
 WORKDIR /app
 
-# Copy package files
-COPY packages/pentem-worker/package.json .
+# Copy root workspace files
 COPY pnpm-workspace.yaml .
 COPY package.json .
 COPY pnpm-lock.yaml .
+COPY turbo.json .
+COPY tsconfig.base.json .
 
-# Copy shared package
-COPY packages/pentem-shared ./packages/pentem-shared
+# Create package directories
+RUN mkdir -p packages/pentem-worker packages/pentem-shared
+
+# Copy package configs (needed for dependency installation)
+COPY packages/pentem-worker/package.json ./packages/pentem-worker/
+COPY packages/pentem-worker/tsconfig.json ./packages/pentem-worker/
+COPY packages/pentem-shared/package.json ./packages/pentem-shared/
+COPY packages/pentem-shared/tsconfig.json ./packages/pentem-shared/
+
+# Copy shared package source (workspace dependency of worker)
+COPY packages/pentem-shared/src ./packages/pentem-shared/src
 
 # Install dependencies
 RUN npm install -g pnpm && pnpm install --frozen-lockfile
 
 # Copy worker source
-COPY packages/pentem-worker/src ./src
+COPY packages/pentem-worker/src ./packages/pentem-worker/src
 
 # Build
 RUN pnpm build

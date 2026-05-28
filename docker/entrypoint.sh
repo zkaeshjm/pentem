@@ -17,8 +17,8 @@ if [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ]; then
   chown -R "$HOST_UID:$HOST_GID" /workspace
 
   # Run the worker as the host user
-  exec su-exec "$HOST_UID:$HOST_GID" node /app/dist/worker.js
+  exec su-exec "$HOST_UID:$HOST_GID" node /app/packages/pentem-worker/dist/worker.js
 else
   # Run as default (root)
-  exec node /app/dist/worker.js
+  exec node /app/packages/pentem-worker/dist/worker.js
 fi
