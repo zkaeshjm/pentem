@@ -1,7 +1,4 @@
-import { createRequire } from 'node:module';
-const require = createRequire(import.meta.url);
-const blessed = require('blessed');
-
+import blessed from 'blessed';
 import type { Widgets } from 'blessed';
 import type { App, ScreenId, TUIScreen } from '../app.ts';
 import { type SessionData, listSessions } from '../services/workspace.ts';

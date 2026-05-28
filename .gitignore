@@ -8,3 +8,4 @@ workspaces/
 .temporal/
 *.db
 *.db-journal
+dist-exe/

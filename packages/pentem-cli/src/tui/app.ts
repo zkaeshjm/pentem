@@ -1,10 +1,7 @@
-import { createRequire } from 'node:module';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-const require = createRequire(import.meta.url);
-const blessed = require('blessed');
-
+import blessed from 'blessed';
 import type { Widgets } from 'blessed';
 
 import { ManualScanner } from './services/manual-scanner.ts';

@@ -8,5 +8,4 @@ export default defineConfig({
   bundle: true,
   platform: 'node',
   target: 'node20',
-  external: ['blessed'],
 });
