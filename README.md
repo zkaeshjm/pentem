@@ -18,6 +18,25 @@ Pentem is an **autonomous penetration testing framework** with two modes:
 
 ## Quick Start
 
+### One-liner Install
+
+**Windows (EXE):**
+```powershell
+irm https://raw.githubusercontent.com/zkaeshjm/pentem/main/scripts/install-exe.ps1 | iex
+```
+
+**macOS / Linux:**
+```bash
+npm install -g pentem-pentest
+```
+
+**Android (Termux):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/zkaeshjm/pentem/main/scripts/termux-install.sh | bash
+```
+
+### From Source
+
 ```powershell
 # Install
 .\scripts\install.ps1
@@ -184,6 +203,15 @@ $env:OPENAI_BASE_URL = "https://api.openai.com/v1"  # optional
 ---
 
 ## Architecture
+
+### Standalone Windows EXE
+A prebuilt `pentem.exe` (~87 MB) is available on [GitHub Releases](https://github.com/zkaeshjm/pentem/releases).
+No Node.js installation required — the EXE bundles the entire Node.js runtime and all dependencies.
+
+Build it yourself with:
+```powershell
+.\scripts\build-exe.ps1
+```
 
 ```
 ┌───────────────────────────────────────────────────────────┐
