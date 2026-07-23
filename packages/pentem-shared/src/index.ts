@@ -12,6 +12,9 @@ export type {
   PipelineConfig,
   ProviderConfig,
   ModelConfig,
+  ScopeConfig,
+  SafetyConfig,
+  RateLimitConfig,
 } from './config-types.js';
 
 export type {
@@ -30,8 +33,9 @@ export type {
   AgentParams,
   AgentResult,
   AgentMetrics,
+  VulnerabilityType,
 } from './agent-types.js';
-export { VULNERABILITY_AGENTS } from './agent-types.js';
+export { VULNERABILITY_AGENTS, ALL_VULNERABILITY_TYPES } from './agent-types.js';
 
 export {
   DELIVERABLE_SIZE_LIMIT,
@@ -41,3 +45,19 @@ export {
   AGENT_MAX_TURNS,
   MAX_PARALLEL_AGENTS,
 } from './workflow-constants.js';
+
+export type { ScopeConfig as ScopeConfigEx } from './scope.js';
+export { validateUrlAgainstScope, computeScopeFromTarget, DEFAULT_RATE_LIMIT, DEFAULT_SAFETY } from './scope.js';
+
+export type { RateLimiter } from './rate-limiter.js';
+export { TokenBucketRateLimiter, NoopRateLimiter } from './rate-limiter.js';
+
+export type { ComplianceFramework, ComplianceRequirement, ComplianceMapping } from './compliance.js';
+export {
+  getComplianceForVulnType,
+  getComplianceForAllVulns,
+  getAllFrameworks,
+  getFrameworkDisplayName,
+} from './compliance.js';
+
+export type { PluginType, HookPoint, PluginManifest, PluginContext, PluginHookResult, PentemPlugin } from './plugin-types.js';

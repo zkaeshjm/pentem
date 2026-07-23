@@ -86,6 +86,12 @@ Always think step by step. First explore, then analyze, then report.`;
     if (this.provider.type === 'openai' || this.provider.type === 'openai-compatible') {
       return this.runOpenAIAgent(agentType, category, targetUrl, systemPrompt, userContent, fsDir);
     }
+    if (this.provider.type === 'bedrock') {
+      return this.runBedrockAgent(agentType, category, targetUrl, systemPrompt, userContent, fsDir);
+    }
+    if (this.provider.type === 'vertex') {
+      return this.runVertexAgent(agentType, category, targetUrl, systemPrompt, userContent, fsDir);
+    }
     return this.runAnthropicAgent(agentType, category, targetUrl, systemPrompt, userContent, fsDir);
   }
 
@@ -299,6 +305,280 @@ Always think step by step. First explore, then analyze, then report.`;
           messages.push({
             role: 'user',
             content: [{ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) }],
+          });
+        }
+      }
+
+      if (!hasToolUse) break;
+    }
+
+    const reportContent = this.formatReport(agentType, category, targetUrl, analysis, findings);
+    const analysisPath = path.join(fsDir, 'analysis.md');
+    fs.writeFileSync(analysisPath, reportContent, 'utf-8');
+
+    const queuePath = path.join(fsDir, 'queue.json');
+    const queue = {
+      agent: agentType,
+      category,
+      targetUrl,
+      findings,
+      severity: findings.length > 0 ? 'medium' : 'none',
+      completedAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2), 'utf-8');
+
+    this.emitProgress(category, agentType, 'completed', `${category} ${agentType} analysis complete`, 100);
+    return { analysis: analysisPath, queue: queuePath };
+  }
+
+  private async runBedrockAgent(
+    agentType: string,
+    category: string,
+    targetUrl: string,
+    systemPrompt: string,
+    userContent: string,
+    fsDir: string,
+  ): Promise<{ analysis: string; queue: string }> {
+    const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-east-1';
+    const model = this.provider.model ?? 'anthropic.claude-sonnet-4-20250514-v1:0';
+
+    const { default: aws } = await import('@aws-sdk/client-bedrock-runtime').catch(() => {
+      throw new Error('AWS Bedrock SDK not available. Install it: npm install @aws-sdk/client-bedrock-runtime');
+    });
+
+    const client = new aws.BedrockRuntimeClient({
+      region,
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+        sessionToken: process.env.AWS_SESSION_TOKEN,
+      },
+    });
+
+    const ConverseCommand = aws.ConverseCommand;
+
+    const tools = [
+      {
+        toolSpec: {
+          name: 'fetch_url',
+          description: 'Make an HTTP request to a URL',
+          inputSchema: {
+            json: {
+              type: 'object',
+              properties: {
+                url: { type: 'string', description: 'The URL to fetch' },
+                method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'DELETE'] },
+                headers: {
+                  type: 'object',
+                  description: 'Optional HTTP headers',
+                  additionalProperties: { type: 'string' },
+                },
+                body: { type: 'string', description: 'Request body for POST/PUT' },
+              },
+              required: ['url'],
+            },
+          },
+        },
+      },
+    ];
+
+    const messages: Array<{ role: 'user' | 'assistant'; content: Array<Record<string, unknown>> }> = [
+      { role: 'user', content: [{ text: userContent }] },
+    ];
+
+    let analysis = '';
+    const findings: string[] = [];
+
+    for (let turn = 0; turn < 25; turn++) {
+      this.emitProgress(
+        category,
+        agentType,
+        'progress',
+        `Analysis turn ${turn + 1}/25...`,
+        Math.round(((turn + 1) / 25) * 80),
+      );
+
+      const command = new ConverseCommand({
+        modelId: model,
+        system: [{ text: systemPrompt }],
+        // biome-ignore lint/suspicious/noExplicitAny: Bedrock SDK type compatibility
+        messages: messages as any,
+        toolConfig: { tools },
+        inferenceConfig: { maxTokens: 4000 },
+      });
+
+      const response = await client.send(command);
+      const output = response.output;
+      if (!output) break;
+
+      const msg = output.message;
+      if (!msg) break;
+
+      // biome-ignore lint/suspicious/noExplicitAny: Bedrock SDK ContentBlock type compatibility
+      messages.push({ role: 'assistant', content: msg.content ?? [] } as any);
+
+      let hasToolUse = false;
+      for (const block of msg.content ?? []) {
+        const b = block as unknown as Record<string, unknown>;
+        if (b.text) {
+          analysis += b.text as string;
+        } else if (b.toolUse) {
+          hasToolUse = true;
+          const tu = b.toolUse as Record<string, unknown>;
+          if (tu.name === 'fetch_url') {
+            const input = tu.input as Record<string, unknown>;
+            const result = await this.executeFetch(input);
+            findings.push(`[${(input.method as string) ?? 'GET'}] ${input.url as string}: ${result.status}`);
+            messages.push({
+              role: 'user',
+              content: [
+                {
+                  toolResult: {
+                    toolUseId: tu.toolUseId as string,
+                    content: [{ text: JSON.stringify(result) }],
+                  },
+                },
+              ],
+              // biome-ignore lint/suspicious/noExplicitAny: Bedrock SDK ContentBlock type compatibility
+            } as any);
+          }
+        }
+      }
+
+      if (!hasToolUse && analysis) break;
+      if (response.stopReason === 'end_turn') break;
+    }
+
+    const reportContent = this.formatReport(agentType, category, targetUrl, analysis, findings);
+    const analysisPath = path.join(fsDir, 'analysis.md');
+    fs.writeFileSync(analysisPath, reportContent, 'utf-8');
+
+    const queuePath = path.join(fsDir, 'queue.json');
+    const queue = {
+      agent: agentType,
+      category,
+      targetUrl,
+      findings,
+      severity: findings.length > 0 ? 'medium' : 'none',
+      completedAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2), 'utf-8');
+
+    this.emitProgress(category, agentType, 'completed', `${category} ${agentType} analysis complete`, 100);
+    return { analysis: analysisPath, queue: queuePath };
+  }
+
+  private async runVertexAgent(
+    agentType: string,
+    category: string,
+    targetUrl: string,
+    systemPrompt: string,
+    userContent: string,
+    fsDir: string,
+  ): Promise<{ analysis: string; queue: string }> {
+    const projectId = process.env.VERTEX_PROJECT_ID;
+    if (!projectId) {
+      throw new Error('VERTEX_PROJECT_ID environment variable is required for Vertex AI');
+    }
+    const location = process.env.VERTEX_LOCATION || 'us-east5';
+    const apiKey = process.env.VERTEX_API_KEY;
+    const model = this.provider.model ?? 'claude-sonnet-4-20250514';
+
+    let accessToken = '';
+    if (!apiKey) {
+      const { GoogleAuth } = await import('google-auth-library').catch(() => {
+        throw new Error('Google Auth library not available. Install it: npm install google-auth-library');
+      });
+      const auth = new GoogleAuth({
+        scopes: 'https://www.googleapis.com/auth/cloud-platform',
+      });
+      accessToken = (await auth.getAccessToken()) ?? '';
+    }
+
+    const baseUrl = apiKey
+      ? `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/anthropic/models/${model}:rawPredict?key=${apiKey}`
+      : `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/anthropic/models/${model}:rawPredict`;
+
+    const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [{ role: 'user', content: userContent }];
+
+    const tools = [
+      {
+        name: 'fetch_url',
+        description: 'Make an HTTP request to a URL',
+        input_schema: {
+          type: 'object',
+          properties: {
+            url: { type: 'string', description: 'The URL to fetch' },
+            method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'DELETE'] },
+            headers: { type: 'object', description: 'Optional HTTP headers' },
+            body: { type: 'string', description: 'Request body for POST/PUT' },
+          },
+          required: ['url'],
+        },
+      },
+    ];
+
+    let analysis = '';
+    const findings: string[] = [];
+
+    for (let turn = 0; turn < 25; turn++) {
+      this.emitProgress(
+        category,
+        agentType,
+        'progress',
+        `Analysis turn ${turn + 1}/25...`,
+        Math.round(((turn + 1) / 25) * 80),
+      );
+
+      const body = {
+        anthropic_version: 'vertex-2023-10-16',
+        model,
+        max_tokens: 4000,
+        system: systemPrompt,
+        messages,
+        tools,
+        tool_choice: { type: 'auto' },
+      };
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (!apiKey) {
+        headers.Authorization = `Bearer ${accessToken}`;
+      }
+
+      const response = await fetch(baseUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Vertex AI API error: ${response.status} ${errText}`);
+      }
+
+      const data = (await response.json()) as {
+        content: Array<{ type: string; text?: string; name?: string; input?: Record<string, unknown>; id?: string }>;
+        stop_reason: string;
+      };
+
+      const contentBlock = data.content;
+      let hasToolUse = false;
+
+      for (const block of contentBlock) {
+        if (block.type === 'text' && block.text) {
+          analysis += block.text;
+          messages.push({ role: 'assistant', content: block.text });
+        } else if (block.type === 'tool_use' && block.name === 'fetch_url') {
+          hasToolUse = true;
+          const result = await this.executeFetch(block.input as Record<string, unknown>);
+          const inputMethod = (block.input as Record<string, string>)?.method;
+          const inputUrl = (block.input as Record<string, string>)?.url;
+          findings.push(`[${inputMethod ?? 'GET'}] ${inputUrl ?? '?'}: ${result.status}`);
+          messages.push({
+            role: 'user',
+            content: JSON.stringify([{ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) }]),
           });
         }
       }

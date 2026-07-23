@@ -3,19 +3,45 @@ import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import {
+  DEFAULT_RATE_LIMIT,
+  TokenBucketRateLimiter,
+  computeScopeFromTarget,
+  validateUrlAgainstScope,
+} from '@internal/pentem-shared';
 import type { AgentProgress } from './agent-runner.ts';
+import { AuthSessionManager } from './auth-session.ts';
 import { DirectAgentPipeline } from './direct-agent.ts';
+import { analyzeFalsePositives } from './false-positive.ts';
 import { ManualScanner } from './manual-scanner.ts';
 import { detectFromEnvOrConfig } from './providers-config.ts';
+import { generateSarifReport, getExitCode } from './sarif-output.ts';
+import { findAttackChains } from './vuln-chaining.ts';
 
 export interface ScanStartResult {
   success: boolean;
   error?: string;
   sessionId?: string;
   manual?: boolean;
+  exitCode?: number;
+  sarifPath?: string;
 }
 
 export const scanEvents = new EventEmitter();
+
+let globalRateLimiter: TokenBucketRateLimiter | null = null;
+
+export function getRateLimiter(): TokenBucketRateLimiter {
+  if (!globalRateLimiter) {
+    globalRateLimiter = new TokenBucketRateLimiter(
+      DEFAULT_RATE_LIMIT.requestsPerSecond,
+      DEFAULT_RATE_LIMIT.burstSize,
+      DEFAULT_RATE_LIMIT.concurrency,
+    );
+    globalRateLimiter.start();
+  }
+  return globalRateLimiter;
+}
 
 export function validateUrl(url: string): boolean {
   try {
@@ -37,13 +63,18 @@ export function getWorkspacePath(): string {
 export async function startScan(url: string, manual = false): Promise<ScanStartResult> {
   if (!validateUrl(url)) return { success: false, error: 'Invalid target URL' };
 
+  const scope = computeScopeFromTarget(url);
+  const validation = validateUrlAgainstScope(url, url, scope);
+  if (!validation.allowed) {
+    return { success: false, error: `URL blocked by scope: ${validation.reason}` };
+  }
+
   const workspacePath = getWorkspacePath();
 
   if (manual) {
     return startManualScan(url, workspacePath);
   }
 
-  // Agentic mode — requires API key
   const provider = detectFromEnvOrConfig();
   if (!provider.configured) {
     return { success: false, error: provider.error || 'No LLM provider configured' };
@@ -80,19 +111,53 @@ async function startManualScan(url: string, workspacePath: string): Promise<Scan
     };
     fs.writeFileSync(path.join(sessionsDir, `${sessionId}.json`), JSON.stringify(session, null, 2));
 
-    const scanner = new ManualScanner(url);
+    const authSession = new AuthSessionManager(path.join(workspacePath, sessionId, 'auth-session.json'));
+    const scanner = new ManualScanner(url, authSession, getRateLimiter());
 
-    // Run async and emit progress
     scanner
       .run()
       .then((result) => {
-        // Save report
         const auditDir = path.join(workspacePath, sessionId, 'audit');
         fs.mkdirSync(auditDir, { recursive: true });
         fs.writeFileSync(path.join(auditDir, 'final-report.md'), result.report, 'utf-8');
 
-        // Update session
-        session.status = result.findings.some((f) => f.severity === 'critical' || f.severity === 'high')
+        const fpAnalyzed = analyzeFalsePositives(result.findings);
+        const realFindings = fpAnalyzed.filter((f) => !f.isFp);
+        const chains = findAttackChains(realFindings);
+
+        let enhancedReport = result.report;
+        if (chains.length > 0) {
+          enhancedReport += '\n\n## Attack Chains\n\n';
+          for (const chain of chains) {
+            enhancedReport += `### ${chain.name}\n\n`;
+            enhancedReport += `**Severity:** ${chain.severity.toUpperCase()}\n`;
+            enhancedReport += `**Likelihood:** ${chain.likelihood}\n`;
+            enhancedReport += `**Impact:** ${chain.impact}\n\n`;
+            enhancedReport += '**Steps:**\n';
+            for (const step of chain.steps) {
+              enhancedReport += `- ${step.description}\n`;
+            }
+            enhancedReport += '\n';
+          }
+        }
+
+        if (fpAnalyzed.some((f) => f.isFp)) {
+          enhancedReport += '\n## False Positive Analysis\n\n';
+          enhancedReport += '| Finding | Reason |\n|---------|--------|\n';
+          for (const f of fpAnalyzed) {
+            if (f.isFp) {
+              enhancedReport += `| ${f.type}: ${f.description} | ${f.fpReason} |\n`;
+            }
+          }
+          enhancedReport += '\n';
+        }
+
+        fs.writeFileSync(path.join(auditDir, 'final-report.md'), enhancedReport, 'utf-8');
+
+        const sarifPath = path.join(auditDir, 'report.sarif');
+        generateSarifReport(realFindings, url, 'Pentem Manual Scanner', sarifPath);
+
+        session.status = realFindings.some((f) => f.severity === 'critical' || f.severity === 'high')
           ? 'completed'
           : 'completed';
         session.completedAt = new Date().toISOString();
@@ -103,7 +168,7 @@ async function startManualScan(url: string, workspacePath: string): Promise<Scan
           phase: 'report',
           agent: 'system',
           status: 'completed',
-          message: `Manual scan complete — ${result.findings.length} findings`,
+          message: `Manual scan complete — ${realFindings.length} findings (${fpAnalyzed.filter((f) => f.isFp).length} FP filtered)`,
         } as AgentProgress);
       })
       .catch((err) => {
@@ -182,6 +247,79 @@ export function stopScan(sessionId: string): void {
       execSync(`docker compose -f "${composeFile}" down`, { stdio: 'pipe', timeout: 30000 });
     } catch {}
   }
+}
+
+export async function resumeScan(sessionId: string): Promise<ScanStartResult> {
+  const workspacePath = getWorkspacePath();
+  const sessionPath = path.join(workspacePath, '.pentem', `${sessionId}.json`);
+
+  if (!fs.existsSync(sessionPath)) {
+    return { success: false, error: `Session not found: ${sessionId}` };
+  }
+
+  let sessionData: Record<string, unknown>;
+  try {
+    sessionData = JSON.parse(fs.readFileSync(sessionPath, 'utf-8'));
+  } catch {
+    return { success: false, error: `Failed to read session data: ${sessionId}` };
+  }
+
+  const status = sessionData.status as string;
+  if (status === 'completed') {
+    return { success: false, error: `Session ${sessionId} is already completed` };
+  }
+
+  const targetUrl = sessionData.targetUrl as string;
+  const existingAgents = (sessionData.completedAgents as string[]) || [];
+
+  const provider = detectFromEnvOrConfig();
+  if (!provider.configured) {
+    return { success: false, error: provider.error || 'No LLM provider configured' };
+  }
+
+  const sessionFromFile: import('./direct-agent.ts').ScanSession = {
+    sessionId,
+    targetUrl,
+    status: 'in_progress',
+    completedAgents: existingAgents,
+    failedAgents: (sessionData.failedAgents as import('./direct-agent.ts').ScanSession['failedAgents']) || [],
+    currentPhase: (sessionData.currentPhase as string) || 'pre-recon',
+    metrics: (sessionData.metrics as import('./direct-agent.ts').ScanSession['metrics']) || {
+      totalCost: 0,
+      totalTurns: 0,
+      totalDurationMs: 0,
+      perAgent: {},
+    },
+    startedAt: (sessionData.startedAt as string) || new Date().toISOString(),
+  };
+
+  const pipeline = new DirectAgentPipeline(
+    {
+      type: provider.provider as import('../../providers.ts').ProviderType,
+      configured: true,
+      apiKey: provider.apiKey,
+      baseUrl: provider.baseUrl,
+      model: provider.model,
+    },
+    targetUrl,
+    workspacePath,
+    sessionFromFile,
+  );
+
+  pipeline.onProgress((progress: import('./agent-runner.ts').AgentProgress) => {
+    scanEvents.emit('scanProgress', sessionId, progress);
+  });
+
+  pipeline.run().catch((err: Error) => {
+    scanEvents.emit('scanProgress', sessionId, {
+      phase: 'error',
+      agent: 'system',
+      status: 'failed',
+      message: `Resume error: ${err.message}`,
+    } as import('./agent-runner.ts').AgentProgress);
+  });
+
+  return { success: true, sessionId };
 }
 
 export function cleanStoppedScans(): void {

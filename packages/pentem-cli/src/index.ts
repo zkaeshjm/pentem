@@ -5,6 +5,7 @@ import { listCommand } from './commands/list.ts';
 import { reportCommand } from './commands/report.ts';
 import { resumeCommand } from './commands/resume.ts';
 import { scanCommand } from './commands/scan.ts';
+import { shareCommand } from './commands/share.ts';
 import { statusCommand } from './commands/status.ts';
 import { tuiCommand } from './commands/tui.ts';
 
@@ -21,6 +22,14 @@ async function main(): Promise<void> {
       const saveLogs = saveLogsIndex >= 0 ? args[saveLogsIndex + 1] : undefined;
       const outputIndex = args.indexOf('--output');
       const output = outputIndex >= 0 ? args[outputIndex + 1] : undefined;
+      const notifyIndex = args.indexOf('--notify');
+      const notify = notifyIndex >= 0 ? args[notifyIndex + 1] : undefined;
+      const shareIndex = args.indexOf('--share');
+      const share = shareIndex >= 0 ? args[shareIndex + 1] : undefined;
+      const sarif = args.includes('--sarif');
+      const exitCode = args.includes('--exit-code');
+      const scopeIndex = args.indexOf('--scope');
+      const scope = scopeIndex >= 0 ? args[scopeIndex + 1] : undefined;
       // URL is the first non-flag argument (skip command at args[0])
       const url = args
         .slice(1)
@@ -34,13 +43,21 @@ async function main(): Promise<void> {
             a !== saveLogs &&
             !a.startsWith('--output') &&
             a !== output &&
+            !a.startsWith('--notify') &&
+            a !== notify &&
+            !a.startsWith('--share') &&
+            a !== share &&
+            !a.startsWith('--sarif') &&
+            !a.startsWith('--exit-code') &&
+            !a.startsWith('--scope') &&
+            a !== scope &&
             !a.startsWith('-'),
         );
       if (!url) {
-        console.error('Usage: pentem scan <target-url> [--manual] [--output <path>] [--save-logs <dir>]');
+        console.error('Usage: pentem scan <target-url> [--manual] [--output <path>] [--save-logs <dir>] [--notify slack,discord] [--share ./output.json]');
         process.exit(1);
       }
-      await scanCommand({ url, config, manual, saveLogs, output });
+      await scanCommand({ url, config, manual, saveLogs, output, notify, share, sarif, exitCode, scope });
       break;
     }
 
@@ -88,6 +105,18 @@ async function main(): Promise<void> {
       await listCommand();
       break;
 
+    case 'share': {
+      const sessionId = args[1];
+      const outputIndex = args.indexOf('--output');
+      const outputFile = outputIndex >= 0 ? args[outputIndex + 1] : undefined;
+      if (!sessionId) {
+        console.error('Usage: pentem share <session-id> [--output <file>]');
+        process.exit(1);
+      }
+      await shareCommand({ sessionId, output: outputFile });
+      break;
+    }
+
     case 'config': {
       const subcommand = args[1]?.toLowerCase();
       if (subcommand === 'validate') {
@@ -129,8 +158,11 @@ Usage:
 Commands:
   pentem scan <url>                 Start an AI agent penetration test
   pentem scan --manual <url>        Manual scan (no API key needed)
-  pentem scan --manual <url> --output ./report.md  Save report to file
-  pentem scan --manual <url> --save-logs ./logs    Save all logs to dir
+   pentem scan --manual <url> --output ./report.md  Save report to file
+   pentem scan --manual <url> --save-logs ./logs    Save all logs to dir
+   pentem scan <url> --notify slack,discord         Send notifications on completion
+   pentem scan <url> --share ./results.json         Export findings as shareable JSON
+   pentem share <session-id>                        Export findings from completed scan
   pentem resume <session-id>        Resume a scan
   pentem status <session-id>        Check scan status
   pentem report <session-id>        View full report in terminal

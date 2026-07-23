@@ -30,6 +30,22 @@ export const OPENAI_MODELS = [
   'gpt-3.5-turbo',
 ] as const;
 
+export const BEDROCK_MODELS = [
+  'anthropic.claude-sonnet-4-20250514-v1:0',
+  'anthropic.claude-3-5-sonnet-20241022-v2:0',
+  'anthropic.claude-3-5-haiku-20241022-v1:0',
+  'anthropic.claude-3-opus-20240229-v1:0',
+  'anthropic.claude-3-haiku-20240307-v1:0',
+] as const;
+
+export const VERTEX_MODELS = [
+  'claude-sonnet-4-20250514',
+  'claude-3-5-sonnet-20241022',
+  'claude-3-5-haiku-20241022',
+  'claude-3-opus-20240229',
+  'claude-3-haiku-20240307',
+] as const;
+
 function configDir(): string {
   const d = path.join(os.homedir(), '.pentem');
   fs.mkdirSync(d, { recursive: true });
@@ -84,7 +100,6 @@ export function detectFromEnvOrConfig(): {
   baseUrl?: string;
   error?: string;
 } {
-  // Check env vars first
   let provider = '';
   let apiKey = '';
   let model = '';
@@ -107,6 +122,22 @@ export function detectFromEnvOrConfig(): {
       baseUrl: process.env.OPENAI_BASE_URL || '',
     });
   }
+  if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+    configured.push({
+      provider: 'bedrock',
+      apiKey: process.env.AWS_ACCESS_KEY_ID,
+      model: process.env.BEDROCK_MODEL || process.env.PENTEM_MODEL || 'anthropic.claude-sonnet-4-20250514-v1:0',
+      baseUrl: process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-east-1',
+    });
+  }
+  if (process.env.VERTEX_PROJECT_ID && (process.env.VERTEX_API_KEY || process.env.GOOGLE_APPLICATION_CREDENTIALS)) {
+    configured.push({
+      provider: 'vertex',
+      apiKey: process.env.VERTEX_API_KEY || '',
+      model: process.env.VERTEX_MODEL || process.env.PENTEM_MODEL || 'claude-sonnet-4-20250514',
+      baseUrl: process.env.VERTEX_LOCATION || 'us-east5',
+    });
+  }
 
   // If no env vars, check config file
   if (configured.length === 0) {
@@ -118,13 +149,17 @@ export function detectFromEnvOrConfig(): {
         model: persisted.model,
         baseUrl: persisted.baseUrl || '',
       });
-      // Load into env for downstream use
       if (persisted.provider === 'anthropic') {
         process.env.ANTHROPIC_API_KEY = persisted.apiKey;
         if (persisted.model) process.env.ANTHROPIC_MODEL = persisted.model;
-      } else {
+      } else if (persisted.provider === 'openai') {
         process.env.OPENAI_API_KEY = persisted.apiKey;
         if (persisted.model) process.env.OPENAI_MODEL = persisted.model;
+      } else if (persisted.provider === 'bedrock') {
+        process.env.BEDROCK_MODEL = persisted.model;
+      } else if (persisted.provider === 'vertex') {
+        process.env.VERTEX_PROJECT_ID = persisted.apiKey;
+        process.env.VERTEX_MODEL = persisted.model;
       }
     }
   }
@@ -133,7 +168,8 @@ export function detectFromEnvOrConfig(): {
     return {
       configured: false,
       provider: '',
-      error: 'No provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.',
+      error:
+        'No provider configured. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, AWS credentials (Bedrock), or VERTEX_PROJECT_ID (Vertex).',
     };
   }
   if (configured.length > 1) {
@@ -156,5 +192,7 @@ export function detectFromEnvOrConfig(): {
 export function getModelsForProvider(provider: string): readonly string[] {
   if (provider === 'anthropic') return ANTHROPIC_MODELS;
   if (provider === 'openai') return OPENAI_MODELS;
+  if (provider === 'bedrock') return BEDROCK_MODELS;
+  if (provider === 'vertex') return VERTEX_MODELS;
   return [];
 }

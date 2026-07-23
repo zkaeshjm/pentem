@@ -1,5 +1,11 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { computeScopeFromTarget, validateUrlAgainstScope } from '@internal/pentem-shared';
+import type { TokenBucketRateLimiter } from '@internal/pentem-shared';
+import { getComplianceForVulnType, getFrameworkDisplayName } from '@internal/pentem-shared';
+import type { AuthSessionManager } from './auth-session.ts';
+import { findAttackChains } from './vuln-chaining.ts';
+import { detectWaf } from './waf-detector.ts';
 
 interface ScanResult {
   status: number;
@@ -81,11 +87,15 @@ export class ManualScanner {
   private baseUrl: string;
   private findings: Finding[] = [];
   private requestLog: ScanResult[] = [];
+  private authSession: AuthSessionManager | null;
+  private rateLimiter: TokenBucketRateLimiter | null;
 
-  constructor(targetUrl: string) {
+  constructor(targetUrl: string, authSession?: AuthSessionManager, rateLimiter?: TokenBucketRateLimiter) {
     this.targetUrl = targetUrl;
     const u = new URL(targetUrl);
     this.baseUrl = `${u.protocol}//${u.host}`;
+    this.authSession = authSession ?? null;
+    this.rateLimiter = rateLimiter ?? null;
   }
 
   getRequestLog(): ScanResult[] {
@@ -103,21 +113,43 @@ export class ManualScanner {
       body: '',
       duration: 0,
     };
+
+    const scope = computeScopeFromTarget(this.targetUrl);
+    const scopeCheck = validateUrlAgainstScope(url, this.targetUrl, scope);
+    if (!scopeCheck.allowed) {
+      entry.error = `Blocked by scope: ${scopeCheck.reason}`;
+      return entry;
+    }
+
+    if (this.rateLimiter) {
+      try {
+        const release = await this.rateLimiter.waitForSlot();
+        release();
+      } catch {}
+    }
+
     try {
+      const headers: Record<string, string> = { 'User-Agent': 'Pentem-Manual-Scanner/1.0' };
+
+      if (this.authSession) {
+        const targetDomain = new URL(url).hostname;
+        Object.assign(headers, this.authSession.applyToHeaders(headers, targetDomain));
+      }
+
       const fetchOpts: RequestInit = {
         method,
-        headers: { 'User-Agent': 'Pentem-Manual-Scanner/1.0' },
+        headers,
         redirect: 'manual' as const,
       };
       if (body && method !== 'GET') fetchOpts.body = body;
       const resp = await fetch(url, fetchOpts);
-      const headers: Record<string, string> = {};
+      const respHeaders: Record<string, string> = {};
       resp.headers.forEach((v, k) => {
-        headers[k.toLowerCase()] = v;
+        respHeaders[k.toLowerCase()] = v;
       });
       const text = await resp.text();
       entry.status = resp.status;
-      entry.headers = headers;
+      entry.headers = respHeaders;
       entry.body = text.slice(0, 50000);
     } catch (err) {
       entry.error = String(err);
@@ -132,6 +164,10 @@ export class ManualScanner {
 
     // Phase 1: Base target + headers
     await this.checkBaseTarget();
+
+    // Phase 1b: WAF Detection
+    console.log('  Checking for WAF...');
+    const _wafResult = await this.detectWaf();
 
     // Phase 2: Security headers
     await this.checkSecurityHeaders();
@@ -287,6 +323,22 @@ export class ManualScanner {
     }
   }
 
+  private async detectWaf(): Promise<string | null> {
+    const result = await this.fetchUrl(this.targetUrl);
+    const wafInfo = detectWaf(result.status, result.headers, result.body);
+    if (wafInfo) {
+      this.addFinding(
+        'information-disclosure',
+        'low',
+        this.targetUrl,
+        `WAF Detected: ${wafInfo.name}`,
+        `Certainty: ${wafInfo.certainty}\nSignatures: ${wafInfo.signatures.join(', ')}`,
+      );
+      return wafInfo.name;
+    }
+    return null;
+  }
+
   private async detectTechnologies(): Promise<void> {
     const result = await this.fetchUrl(this.targetUrl);
     if (result.headers.server) this.addFinding('info', 'low', this.targetUrl, `Server: ${result.headers.server}`, '');
@@ -345,6 +397,11 @@ export class ManualScanner {
       (a, b) => (severityOrder[a.severity] || 99) - (severityOrder[b.severity] || 99),
     );
 
+    const complianceFrameworks = [
+      ...new Set(sorted.flatMap((f) => getComplianceForVulnType(f.type).map((r) => r.framework))),
+    ];
+    const chains = findAttackChains(sorted);
+
     const lines = [
       '# Pentem Manual Security Scan Report',
       '',
@@ -360,25 +417,70 @@ export class ManualScanner {
       `- **Medium:** ${this.findings.filter((f) => f.severity === 'medium').length}`,
       `- **Low:** ${this.findings.filter((f) => f.severity === 'low').length}`,
       `- **Requests made:** ${this.requestLog.length}`,
+      complianceFrameworks.length > 0
+        ? `- **Compliance frameworks:** ${complianceFrameworks.map((f) => getFrameworkDisplayName(f)).join(', ')}`
+        : '',
       '',
       '## Findings by Severity',
       '',
       ...sorted.map((f, i) => {
         const sevMap: Record<string, string> = {
-          critical: '🔴 CRITICAL',
-          high: '🟠 HIGH',
-          medium: '🟡 MEDIUM',
-          low: '🔵 LOW',
+          critical: 'CRITICAL',
+          high: 'HIGH',
+          medium: 'MEDIUM',
+          low: 'LOW',
         };
+        const comp = getComplianceForVulnType(f.type);
+        const complianceLine =
+          comp.length > 0
+            ? `**Compliance:** ${comp.map((r) => `${getFrameworkDisplayName(r.framework)} (${r.controlId})`).join(', ')}`
+            : '';
         return [
           `### ${i + 1}. [${sevMap[f.severity] || f.severity}] ${f.description}`,
           `**URL:** ${f.url}`,
           `**Type:** ${f.type}`,
           f.detail ? `**Detail:** ${f.detail}` : '',
+          complianceLine,
           '',
         ].join('\n');
       }),
       '',
+    ];
+
+    if (chains.length > 0) {
+      lines.push('## Attack Chains', '');
+      for (const chain of chains) {
+        lines.push(`### ${chain.name}`);
+        lines.push(`**Severity:** ${chain.severity.toUpperCase()}`);
+        lines.push(`**Likelihood:** ${chain.likelihood}`);
+        lines.push(`**Impact:** ${chain.impact}`);
+        lines.push('');
+        lines.push('**Chain Steps:**');
+        for (const step of chain.steps) {
+          lines.push(`- ${step.description}`);
+        }
+        lines.push('');
+      }
+    }
+
+    if (complianceFrameworks.length > 0) {
+      lines.push('## Compliance Mapping', '');
+      lines.push('The following compliance frameworks are relevant to this scan:');
+      lines.push('');
+      for (const fw of complianceFrameworks) {
+        const fwName = getFrameworkDisplayName(fw);
+        const controls = sorted.flatMap((f) =>
+          getComplianceForVulnType(f.type)
+            .filter((r) => r.framework === fw)
+            .map((r) => `- **${r.controlId}** (${r.controlName}): ${r.description}`),
+        );
+        lines.push(`### ${fwName}`);
+        lines.push(...controls);
+        lines.push('');
+      }
+    }
+
+    lines.push(
       '## Recommendations',
       '',
       ...(this.findings.some((f) => f.severity === 'critical' || f.severity === 'high')
@@ -402,7 +504,7 @@ export class ManualScanner {
       '',
       '---',
       '*Generated by Pentem Manual Scanner*',
-    ];
+    );
     return lines.join('\n');
   }
 }

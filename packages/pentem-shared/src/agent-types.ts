@@ -1,5 +1,19 @@
 export const VULNERABILITY_AGENTS = ['sqli', 'xss', 'auth-bypass', 'authz-bypass', 'ssrf'] as const;
+export const ALL_VULNERABILITY_TYPES = [
+  ...VULNERABILITY_AGENTS,
+  'csrf',
+  'lfi',
+  'xxe',
+  'ssti',
+  'business-logic',
+  'race-condition',
+  'deserialization',
+  'insecure-config',
+  'information-disclosure',
+] as const;
+
 export type AgentType = (typeof VULNERABILITY_AGENTS)[number];
+export type VulnerabilityType = (typeof ALL_VULNERABILITY_TYPES)[number];
 
 export type AgentCategory = 'vuln' | 'exploit';
 export type ModelTier = 'small' | 'medium' | 'large';

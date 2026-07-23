@@ -26,11 +26,18 @@ export class DirectAgentPipeline extends EventEmitter {
   private sessionPath: string;
   private runner: AgentRunner;
 
-  constructor(provider: ProviderConfig, targetUrl: string, workspacePath: string) {
+  constructor(provider: ProviderConfig, targetUrl: string, workspacePath: string, resumeSession?: ScanSession) {
     super();
     this.provider = provider;
     this.workspacePath = workspacePath;
     this.runner = new AgentRunner(provider);
+
+    if (resumeSession) {
+      this.session = { ...resumeSession, status: 'in_progress' };
+      this.sessionPath = path.join(workspacePath, '.pentem', `${resumeSession.sessionId}.json`);
+      this.saveSession();
+      return;
+    }
 
     const sessionId = `scan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     this.session = {
@@ -92,32 +99,40 @@ export class DirectAgentPipeline extends EventEmitter {
     return dir;
   }
 
+  private isAgentCompleted(agent: string): boolean {
+    return this.session.completedAgents.includes(agent);
+  }
+
   async run(): Promise<void> {
     const startTime = Date.now();
     const outputDir = this.getOutputDir();
 
     try {
       // Phase 1: Pre-recon
-      await this.updatePhase('pre-recon');
-      this.emit('progress', {
-        phase: 'pre-recon',
-        agent: 'system',
-        status: 'started',
-        message: 'Starting reconnaissance phase...',
-        percent: 0,
-      } as AgentProgress);
-      await this.runPreRecon(outputDir);
+      if (!this.isAgentCompleted('pre-recon')) {
+        await this.updatePhase('pre-recon');
+        this.emit('progress', {
+          phase: 'pre-recon',
+          agent: 'system',
+          status: 'started',
+          message: 'Starting reconnaissance phase...',
+          percent: 0,
+        } as AgentProgress);
+        await this.runPreRecon(outputDir);
+      }
 
       // Phase 2: Recon
-      await this.updatePhase('recon');
-      this.emit('progress', {
-        phase: 'recon',
-        agent: 'system',
-        status: 'started',
-        message: 'Starting reconnaissance phase...',
-        percent: 0,
-      } as AgentProgress);
-      await this.runRecon(outputDir);
+      if (!this.isAgentCompleted('recon')) {
+        await this.updatePhase('recon');
+        this.emit('progress', {
+          phase: 'recon',
+          agent: 'system',
+          status: 'started',
+          message: 'Starting reconnaissance phase...',
+          percent: 0,
+        } as AgentProgress);
+        await this.runRecon(outputDir);
+      }
 
       // Phase 3: Vulnerability analysis
       await this.updatePhase('vuln');
@@ -142,15 +157,17 @@ export class DirectAgentPipeline extends EventEmitter {
       await this.runExploitation(outputDir);
 
       // Phase 5: Report
-      await this.updatePhase('report');
-      this.emit('progress', {
-        phase: 'report',
-        agent: 'system',
-        status: 'started',
-        message: 'Generating final report...',
-        percent: 0,
-      } as AgentProgress);
-      await this.generateReport(outputDir);
+      if (!this.isAgentCompleted('report')) {
+        await this.updatePhase('report');
+        this.emit('progress', {
+          phase: 'report',
+          agent: 'system',
+          status: 'started',
+          message: 'Generating final report...',
+          percent: 0,
+        } as AgentProgress);
+        await this.generateReport(outputDir);
+      }
 
       this.session.status = 'completed';
       this.session.completedAt = new Date().toISOString();
@@ -229,12 +246,17 @@ export class DirectAgentPipeline extends EventEmitter {
     const results: Array<{ agent: string; analysis: string; queue: string }> = [];
 
     for (const agent of VULN_AGENTS) {
+      const agentKey = `vuln-${agent}`;
+      if (this.isAgentCompleted(agentKey)) {
+        results.push({ agent, analysis: '', queue: '' });
+        continue;
+      }
       try {
         const result = await this.runner.runAgent(agent, 'vuln', this.session.targetUrl, context, outputDir);
         results.push({ agent, ...result });
-        await this.addCompletedAgent(`vuln-${agent}`);
+        await this.addCompletedAgent(agentKey);
       } catch (err) {
-        await this.addFailedAgent(`vuln-${agent}`, err instanceof Error ? err.message : String(err));
+        await this.addFailedAgent(agentKey, err instanceof Error ? err.message : String(err));
       }
     }
 
@@ -251,11 +273,13 @@ export class DirectAgentPipeline extends EventEmitter {
     const context = JSON.stringify({ targetUrl: this.session.targetUrl, phase: 'exploit' });
 
     for (const agent of VULN_AGENTS) {
+      const agentKey = `exploit-${agent}`;
+      if (this.isAgentCompleted(agentKey)) continue;
       try {
         const _result = await this.runner.runAgent(agent, 'exploit', this.session.targetUrl, context, outputDir);
-        await this.addCompletedAgent(`exploit-${agent}`);
+        await this.addCompletedAgent(agentKey);
       } catch (err) {
-        await this.addFailedAgent(`exploit-${agent}`, err instanceof Error ? err.message : String(err));
+        await this.addFailedAgent(agentKey, err instanceof Error ? err.message : String(err));
       }
     }
   }

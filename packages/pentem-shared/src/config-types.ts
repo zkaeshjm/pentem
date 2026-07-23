@@ -3,6 +3,9 @@ export interface PentemConfig {
   pipeline: PipelineConfig;
   provider: ProviderConfig;
   models?: ModelConfig;
+  scope?: ScopeConfig;
+  safety?: SafetyConfig;
+  rateLimit?: RateLimitConfig;
 }
 
 export interface TargetConfig {
@@ -44,4 +47,30 @@ export interface ModelConfig {
   small?: string;
   medium?: string;
   large?: string;
+}
+
+export interface ScopeConfig {
+  allowedDomains?: string[];
+  allowedPaths?: string[];
+  excludedDomains?: string[];
+  excludedPaths?: string[];
+  allowedPorts?: number[];
+  allowedSchemes?: string[];
+  maxDepth?: number;
+}
+
+export interface SafetyConfig {
+  dryRun: boolean;
+  requireExploitApproval: boolean;
+  maxRedirects: number;
+  maxResponseSize: number;
+  timeout: number;
+  allowDestructiveActions: boolean;
+}
+
+export interface RateLimitConfig {
+  requestsPerSecond: number;
+  requestsPerMinute: number;
+  burstSize: number;
+  concurrency: number;
 }

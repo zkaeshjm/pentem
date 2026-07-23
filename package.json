@@ -15,6 +15,7 @@
     "lint:check": "biome check .",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean",
+    "test": "turbo run test",
     "format": "biome format --write .",
     "format:check": "biome format ."
   },
