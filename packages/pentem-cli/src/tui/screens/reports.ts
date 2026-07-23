@@ -27,7 +27,7 @@ export class ReportsScreen implements TUIScreen {
     blessed.text({
       parent: this.box, top: 0, left: 0, width: '100%', height: 1,
       style: { fg: 'cyan', bold: true },
-      content: ' [Enter] View Report  [v] View Logs  [s] Save to File  [S] Share  [r] Refresh',
+      content: ' [Enter] View Report  [v] View Logs  [o] Save to File  [x] Share  [r] Refresh',
     });
 
     this.list = blessed.list({

@@ -77,6 +77,7 @@ function getScreen(id: ScreenId): TUIScreen {
 }
 
 function go(m: Mode): void {
+  screen.grabKeys = false;
   const prevMode = mode;
   const prevIsTab = TAB_MODES.includes(prevMode);
   const newIsTab = TAB_MODES.includes(m);
@@ -351,16 +352,16 @@ function setupKeyboard(): void {
 
   screen.key(['s', 'S'], () => {
     if (mode === 'scans') { scansScreen.stopSelected(); return; }
+  });
+
+  screen.key(['o', 'O'], () => {
     if (mode === 'reports') { reportsScreen.saveToFile(); return; }
+    if (mode === 'scans') { scansScreen.saveOutput(); return; }
   });
 
   screen.key(['x', 'X'], () => {
     if (mode === 'scans') { scansScreen.shareFindings(); return; }
     if (mode === 'reports') { reportsScreen.shareFindings(); return; }
-  });
-
-  screen.key(['o', 'O'], () => {
-    if (mode === 'scans') { scansScreen.saveOutput(); return; }
   });
 
   screen.key(['c', 'C'], () => {
@@ -411,6 +412,7 @@ function setupKeyboard(): void {
 
   screen.key(['escape'], () => {
     if (Date.now() - app.lastEscapeClose < 100) { app.lastEscapeClose = 0; return; }
+    screen.grabKeys = false;
     if (INPUT_MODES.includes(mode)) { go('setup'); return; }
     const provider = detectFromEnvOrConfig();
     go(provider.configured ? 'dashboard' : 'setup');
