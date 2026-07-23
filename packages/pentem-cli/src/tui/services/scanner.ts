@@ -120,6 +120,7 @@ async function startManualScan(url: string, workspacePath: string): Promise<Scan
         const auditDir = path.join(workspacePath, sessionId, 'audit');
         fs.mkdirSync(auditDir, { recursive: true });
         fs.writeFileSync(path.join(auditDir, 'final-report.md'), result.report, 'utf-8');
+        fs.writeFileSync(path.join(auditDir, 'request-log.md'), scanner.generateLogContent(), 'utf-8');
 
         const fpAnalyzed = analyzeFalsePositives(result.findings);
         const realFindings = fpAnalyzed.filter((f) => !f.isFp);

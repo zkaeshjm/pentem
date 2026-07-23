@@ -97,7 +97,7 @@ export function computeScopeFromTarget(
       allowedDomains: [parsed.hostname],
       allowedPaths: focus?.include,
       excludedPaths: focus?.exclude,
-      allowedPorts: [parsed.port ? Number.parseInt(parsed.port, 10) : 443],
+      allowedPorts: parsed.port ? [Number.parseInt(parsed.port, 10)] : [80, 443],
       allowedSchemes: ['https', 'http'],
       maxDepth: 5,
     };

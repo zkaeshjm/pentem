@@ -1,31 +1,19 @@
-import * as os from 'node:os';
-import * as path from 'node:path';
-
 import blessed from 'blessed';
 import type { Widgets } from 'blessed';
 
-import { ManualScanner } from './services/manual-scanner.ts';
-import {
-  clearPersistedConfig,
-  detectFromEnvOrConfig,
-  getModelsForProvider,
-  savePersistedConfig,
-} from './services/providers-config.ts';
+import { detectFromEnvOrConfig, getModelsForProvider, savePersistedConfig } from './services/providers-config.ts';
 import { startScan, validateUrl } from './services/scanner.ts';
-import {
-  getConfigContent,
-  getReportContent,
-  getSessionLogContent,
-  listReports,
-  listSessions,
-  saveSessionOutput,
-} from './services/workspace.ts';
-
-// ─── TYPES ─────────────────────────────────────────────────────
+import { DashboardScreen } from './screens/dashboard.ts';
+import { ScansScreen } from './screens/scans.ts';
+import { ReportsScreen } from './screens/reports.ts';
+import { ConfigScreen } from './screens/config.ts';
 
 export interface App {
   screen: Widgets.Screen;
   setStatus(msg: string): void;
+  modalCount: number;
+  lastEnterSubmit: number;
+  lastEscapeClose: number;
 }
 
 export type ScreenId = 'dashboard' | 'scans' | 'reports' | 'config';
@@ -38,19 +26,10 @@ export interface TUIScreen {
   refresh(): void;
 }
 
-// ─── STATE ─────────────────────────────────────────────────────
 type Mode =
-  | 'setup'
-  | 'api-key-input'
-  | 'model-select'
-  | 'dashboard'
-  | 'scans'
-  | 'reports'
-  | 'config'
-  | 'new-scan-input'
-  | 'manual-scan-input'
-  | 'manual-scan-result'
-  | 'agentic-progress';
+  | 'setup' | 'api-key-input' | 'model-select'
+  | 'dashboard' | 'scans' | 'reports' | 'config'
+  | 'new-scan-input' | 'manual-scan-input';
 
 let mode: Mode = 'setup';
 let screen: Widgets.Screen;
@@ -60,104 +39,83 @@ let pendingProvider = '';
 let pendingApiKey = '';
 let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
+let dashboardScreen: DashboardScreen;
+let scansScreen: ScansScreen;
+let reportsScreen: ReportsScreen;
+let configScreen: ConfigScreen;
+
+const app: App = {
+  get screen() { return screen; },
+  setStatus: (msg: string) => { statusBar.setContent(` ${msg}`); screen.render(); },
+  modalCount: 0,
+  lastEnterSubmit: 0,
+  lastEscapeClose: 0,
+};
+
 const HEADER = ' ██████╗ ███████╗███╗   ██╗████████╗███████╗███╗   ███╗  v0.1.0';
 const SUB = ' ██╔══██╗██╔════╝████╗  ██║╚══██╔══╝██╔════╝████╗ ████║  Agentic AI & Manual Penetration Tester';
 
-// ─── HELPERS ────────────────────────────────────────────────────
+const TAB_MODES: Mode[] = ['dashboard', 'scans', 'reports', 'config'];
+const INPUT_MODES: Mode[] = ['setup', 'api-key-input', 'model-select', 'new-scan-input', 'manual-scan-input'];
 
-function status(msg: string): void {
-  statusBar.setContent(` ${msg}`);
-  screen.render();
-}
+function status(msg: string): void { app.setStatus(msg); }
 
 function clear(): void {
   contentBox.setContent('');
   for (const c of [...(contentBox.children || [])]) {
-    try {
-      c.detach();
-      c.destroy();
-    } catch {}
+    try { c.detach(); c.destroy(); } catch {}
+  }
+}
+
+function getScreen(id: ScreenId): TUIScreen {
+  switch (id) {
+    case 'dashboard': return dashboardScreen;
+    case 'scans': return scansScreen;
+    case 'reports': return reportsScreen;
+    case 'config': return configScreen;
   }
 }
 
 function go(m: Mode): void {
-  mode = m;
+  const prevMode = mode;
+  const prevIsTab = TAB_MODES.includes(prevMode);
+  const newIsTab = TAB_MODES.includes(m);
+
+  // Provider gate
   const provider = detectFromEnvOrConfig();
-  if (
-    !provider.configured &&
-    ![
-      'setup',
-      'api-key-input',
-      'model-select',
-      'config',
-      'manual-scan-input',
-      'dashboard',
-      'scans',
-      'reports',
-    ].includes(m)
-  ) {
-    mode = 'setup';
+  if (!provider.configured && !['setup', 'api-key-input', 'model-select', 'config', 'manual-scan-input', 'dashboard', 'scans', 'reports'].includes(m)) {
+    m = 'setup';
   }
-  clear();
-  switch (mode) {
-    case 'setup':
-      renderSetup();
-      break;
-    case 'api-key-input':
-      renderApiKeyInput(pendingProvider);
-      break;
-    case 'model-select':
-      renderModelSelect();
-      break;
-    case 'dashboard':
-      renderDashboard();
-      break;
-    case 'scans':
-      renderScans();
-      break;
-    case 'reports':
-      renderReports();
-      break;
-    case 'config':
-      renderConfig();
-      break;
-    case 'new-scan-input':
-      renderNewScanInput();
-      break;
-    case 'manual-scan-result':
-    case 'agentic-progress':
-      break;
+
+  mode = m;
+
+  // Deactivate previous tab screen
+  if (prevIsTab) {
+    getScreen(prevMode as ScreenId).deactivate();
   }
-  screen.render();
-}
 
-// ─── TAB BAR ────────────────────────────────────────────────────
+  // Clear only when transitioning between tab ↔ modal (screens rebuild themselves)
+  if (prevIsTab !== newIsTab) {
+    clear();
+  }
 
-function renderTabs(active: number): void {
-  const tabs = ['[1] Dashboard', '[2] Scans', '[3] Reports', '[4] Config'];
-  const tabBar = blessed.box({ parent: contentBox, top: 0, left: 0, width: '100%', height: 1, style: { bg: 'blue' } });
-  if (active === -1) {
+  if (newIsTab) {
+    getScreen(m as ScreenId).activate();
     screen.render();
     return;
   }
-  let x = 0;
-  for (let i = 0; i < tabs.length; i++) {
-    const tab = tabs[i];
-    if (!tab) continue;
-    blessed.text({
-      parent: tabBar,
-      top: 0,
-      left: x,
-      width: tab.length + 1,
-      height: 1,
-      content: tab,
-      style: i === active ? { bg: 'cyan', fg: 'black', bold: true } : { bg: 'blue', fg: 'white' },
-    });
-    x += tab.length + 1;
-  }
-}
 
-// ─── SETUP SCREEN ──────────────────────────────────────────────
+  clear();
+  switch (mode) {
+    case 'setup': renderSetup(); break;
+    case 'api-key-input': renderApiKeyInput(pendingProvider); break;
+    case 'model-select': renderModelSelect(); break;
+    case 'new-scan-input': renderNewScanInput(); break;
+    case 'manual-scan-input': renderManualScanInput(); break;
+    default: renderSetup(); break;
+  }
+  screen.render();
+}
 
 function renderSetup(): void {
   const lines = [
@@ -182,40 +140,21 @@ function renderSetup(): void {
   blessed.text({ parent: contentBox, top: 1, left: 0, content: lines.join('\n'), style: { fg: 'yellow' }, tags: true });
 }
 
-// ─── API KEY INPUT ──────────────────────────────────────────────
-
 function renderApiKeyInput(providerType: string): void {
   const label = providerType === 'anthropic' ? 'Anthropic (Claude)' : 'OpenAI (GPT-4o / compatible)';
   const envVar = providerType === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY';
-
-  blessed.text({
-    parent: contentBox,
-    top: 3,
-    left: 2,
-    content: `Enter ${label} API Key:`,
-    style: { fg: 'cyan', bold: true },
-  });
-  blessed.text({
-    parent: contentBox,
-    top: 4,
-    left: 2,
-    content: `Sets ${envVar} for this session`,
-    style: { fg: 'gray' },
-  });
-  blessed.text({
-    parent: contentBox,
-    top: 5,
-    left: 2,
-    content: 'Paste your key, then press Enter to confirm / Escape to go back',
-    style: { fg: 'gray' },
+  const lines = [
+    '',
+    `Enter ${label} API Key:`,
+    `Sets ${envVar} for this session`,
+    'Paste your key, then press Enter to confirm / Escape to go back',
+  ];
+  lines.forEach((l, i) => {
+    blessed.text({ parent: contentBox, top: 3 + i, left: 2, content: l, style: { fg: i === 0 ? 'cyan' : i === 1 ? 'gray' : 'gray' } });
   });
 
   const inp = blessed.textbox({
-    parent: contentBox,
-    top: 7,
-    left: 2,
-    width: 76,
-    height: 1,
+    parent: contentBox, top: 7, left: 2, width: 76, height: 1,
     style: { bg: 'blue', fg: 'white', focus: { bg: 'green' } },
     inputOnFocus: true,
   });
@@ -226,75 +165,38 @@ function renderApiKeyInput(providerType: string): void {
   inp.key(['return', 'enter'], () => {
     const val = inp.getValue().trim();
     if (!val) return;
+    app.lastEnterSubmit = Date.now();
+    app.screen.grabKeys = false;
     pendingApiKey = val;
     pendingProvider = providerType;
-    // Clear other provider env to avoid conflict
     if (providerType === 'anthropic') process.env.OPENAI_API_KEY = undefined;
     else process.env.ANTHROPIC_API_KEY = undefined;
-    // Store in env
     if (providerType === 'anthropic') process.env.ANTHROPIC_API_KEY = val;
     else process.env.OPENAI_API_KEY = val;
-    // Show model selection
     go('model-select');
   });
-
-  inp.key(['escape'], () => {
-    go('setup');
-  });
+  inp.key(['escape'], () => { app.lastEscapeClose = Date.now(); app.screen.grabKeys = false; go('setup'); });
 }
-
-// ─── MODEL SELECT ──────────────────────────────────────────────
 
 function renderModelSelect(): void {
   const models = getModelsForProvider(pendingProvider);
   const label = pendingProvider === 'anthropic' ? 'Anthropic' : 'OpenAI';
 
-  blessed.text({
-    parent: contentBox,
-    top: 2,
-    left: 2,
-    content: `Select ${label} Model:`,
-    style: { fg: 'cyan', bold: true },
-  });
-  blessed.text({
-    parent: contentBox,
-    top: 3,
-    left: 2,
-    content: `API key set: ${pendingApiKey.slice(0, 8)}...${pendingApiKey.slice(-4)}`,
-    style: { fg: 'green' },
-  });
-  blessed.text({
-    parent: contentBox,
-    top: 4,
-    left: 2,
-    content: 'Pick a model or type a custom name. Press Enter to confirm.',
-    style: { fg: 'gray' },
-  });
+  blessed.text({ parent: contentBox, top: 2, left: 2, content: `Select ${label} Model:`, style: { fg: 'cyan', bold: true } });
+  blessed.text({ parent: contentBox, top: 3, left: 2, content: `API key set: ${pendingApiKey.slice(0, 8)}...${pendingApiKey.slice(-4)}`, style: { fg: 'green' } });
+  blessed.text({ parent: contentBox, top: 4, left: 2, content: 'Pick a model or type a custom name. Press Enter to confirm.', style: { fg: 'gray' } });
 
   models.forEach((m, i) => {
     blessed.text({ parent: contentBox, top: 6 + i, left: 2, content: `  ${i + 1}. ${m}`, style: { fg: 'white' } });
   });
-
-  const customLabel = `  ${models.length + 1}. Custom model (type name)`;
-  blessed.text({ parent: contentBox, top: 6 + models.length, left: 2, content: customLabel, style: { fg: 'gray' } });
+  blessed.text({ parent: contentBox, top: 6 + models.length, left: 2, content: `  ${models.length + 1}. Custom model (type name)`, style: { fg: 'gray' } });
 
   const inp = blessed.textbox({
-    parent: contentBox,
-    top: 8 + models.length,
-    left: 2,
-    width: 76,
-    height: 1,
+    parent: contentBox, top: 8 + models.length, left: 2, width: 76, height: 1,
     style: { bg: 'blue', fg: 'white', focus: { bg: 'green' } },
     inputOnFocus: true,
   });
-
-  blessed.text({
-    parent: contentBox,
-    top: 10 + models.length,
-    left: 2,
-    content: 'Enter model name or number (1-9), then press Enter',
-    style: { fg: 'gray' },
-  });
+  blessed.text({ parent: contentBox, top: 10 + models.length, left: 2, content: 'Enter model name or number (1-9), then press Enter', style: { fg: 'gray' } });
 
   inp.focus();
   screen.render();
@@ -302,153 +204,28 @@ function renderModelSelect(): void {
   inp.key(['return', 'enter'], () => {
     const raw = inp.getValue().trim();
     let model = raw;
-
-    // Check if user entered a number
     const num = Number.parseInt(raw, 10);
-    if (num >= 1 && num <= models.length) {
-      model = models[num - 1];
-    } else if (num === models.length + 1 || raw === '') {
-      // Custom — let user type later, or use default
-      model = '';
-    }
-
-    // Use default if not specified
-    if (!model) {
-      model = pendingProvider === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o';
-    }
-
-    // Save to env
+    if (num >= 1 && num <= models.length) model = models[num - 1]!;
+    else if (num === models.length + 1 || raw === '') model = '';
+    if (!model) model = pendingProvider === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o';
     if (pendingProvider === 'anthropic') process.env.ANTHROPIC_MODEL = model;
     else process.env.OPENAI_MODEL = model;
-
-    // Persist to config file
-    savePersistedConfig({
-      provider: pendingProvider,
-      apiKey: pendingApiKey,
-      model,
-    });
-
+    app.lastEnterSubmit = Date.now();
+    app.screen.grabKeys = false;
+    savePersistedConfig({ provider: pendingProvider, apiKey: pendingApiKey, model });
     status(`${pendingProvider.toUpperCase()} configured — Model: ${model}`);
     go('dashboard');
   });
-
-  inp.key(['escape'], () => {
-    go('api-key-input');
-  });
+  inp.key(['escape'], () => { app.lastEscapeClose = Date.now(); app.screen.grabKeys = false; go('api-key-input'); });
 }
-
-// ─── DASHBOARD ─────────────────────────────────────────────────
-
-function renderDashboard(): void {
-  renderTabs(0);
-  blessed.text({ parent: contentBox, top: 1, left: 1, content: ' Scanner', style: { fg: 'cyan', bold: true } });
-
-  const provider = detectFromEnvOrConfig();
-
-  if (!provider.configured) {
-    blessed.text({
-      parent: contentBox,
-      top: 3,
-      left: 2,
-      content: ' No API key configured.',
-      style: { fg: 'red', bold: true },
-    });
-    blessed.text({
-      parent: contentBox,
-      top: 4,
-      left: 2,
-      content: ' Press 1 to set up AI, 2 for manual scan, Tab for tabs.',
-      style: { fg: 'yellow' },
-    });
-    screen.render();
-    return;
-  }
-
-  blessed.text({
-    parent: contentBox,
-    top: 2,
-    left: 1,
-    content: ` Provider: ${provider.provider.toUpperCase()}  |  Model: ${provider.model}  |  Key: ${provider.apiKey ? `${provider.apiKey.slice(0, 8)}...${provider.apiKey.slice(-4)}` : ''}`,
-    style: { fg: 'green' },
-  });
-  blessed.text({
-    parent: contentBox,
-    top: 3,
-    left: 1,
-    content: ' [n] New Agentic Scan  [m] New Manual Scan  [Tab] Browse',
-    style: { fg: 'cyan' },
-  });
-
-  const sessions = listSessions();
-  const running = sessions.filter((s) => s.status === 'in_progress');
-  const completed = sessions.filter((s) => s.status !== 'in_progress');
-
-  if (running.length > 0) {
-    blessed.text({
-      parent: contentBox,
-      top: 5,
-      left: 1,
-      content: ` ⏳ Running: ${running.length} scan(s) — auto-refreshes every 3s`,
-      style: { fg: 'yellow', bold: true },
-    });
-    running.forEach((s, i) => {
-      const e = s.startedAt ? Math.floor((Date.now() - new Date(s.startedAt).getTime()) / 1000) : 0;
-      const type = s.sessionId.startsWith('manual') ? 'MANUAL' : 'AGENTIC';
-      blessed.text({
-        parent: contentBox,
-        top: 6 + i,
-        left: 2,
-        content: ` ${type} | ${s.targetUrl.slice(0, 30).padEnd(30)} | Phase: ${s.currentPhase.padEnd(15)} | ${Math.floor(e / 60)}m ${e % 60}s`,
-        style: { fg: 'white' },
-      });
-    });
-  } else {
-    blessed.text({
-      parent: contentBox,
-      top: 5,
-      left: 1,
-      content: ' No active scans. [n] New AI scan | [m] New manual scan',
-      style: { fg: 'gray' },
-    });
-  }
-
-  if (completed.length > 0) {
-    blessed.text({
-      parent: contentBox,
-      top: 6 + running.length + 1,
-      left: 1,
-      content: ` ✅ Completed: ${completed.length} scan(s) — [2] Scans to view`,
-      style: { fg: 'green', bold: true },
-    });
-  }
-  screen.render();
-}
-
-// ─── NEW SCAN INPUT ────────────────────────────────────────────
 
 function renderNewScanInput(): void {
-  blessed.text({
-    parent: contentBox,
-    top: 3,
-    left: 2,
-    content: 'Enter target URL or IP to scan:',
-    style: { fg: 'cyan', bold: true },
-  });
+  blessed.text({ parent: contentBox, top: 3, left: 2, content: 'Enter target URL or IP to scan:', style: { fg: 'cyan', bold: true } });
   blessed.text({ parent: contentBox, top: 4, left: 2, content: 'Example: https://example.com', style: { fg: 'gray' } });
-  blessed.text({
-    parent: contentBox,
-    top: 5,
-    left: 2,
-    content: 'Press Enter to start, Escape to cancel',
-    style: { fg: 'gray' },
-  });
+  blessed.text({ parent: contentBox, top: 5, left: 2, content: 'Press Enter to start, Escape to cancel', style: { fg: 'gray' } });
 
   const inp = blessed.textbox({
-    parent: contentBox,
-    top: 7,
-    left: 2,
-    width: 76,
-    height: 1,
+    parent: contentBox, top: 7, left: 2, width: 76, height: 1,
     style: { bg: 'blue', fg: 'white', focus: { bg: 'green' } },
     inputOnFocus: true,
   });
@@ -459,301 +236,26 @@ function renderNewScanInput(): void {
   inp.key(['return', 'enter'], async () => {
     const url = inp.getValue().trim();
     if (!url) return;
-    if (!validateUrl(url)) {
-      status('Invalid URL');
-      return;
-    }
-
+    if (!validateUrl(url)) { status('Invalid URL'); return; }
+    app.lastEnterSubmit = Date.now();
+    app.screen.grabKeys = false;
     status(`Starting agentic scan on ${url}...`);
     const result = await startScan(url, false);
-    if (result.success) {
-      status(`Agentic scan started: ${url} — Session: ${result.sessionId}`);
-    } else {
-      status(`Failed: ${result.error}`);
-    }
+    if (result.success) status(`Agentic scan started: ${url} — Session: ${result.sessionId}`);
+    else status(`Failed: ${result.error}`);
     go('dashboard');
   });
-
-  inp.key(['escape'], () => go('dashboard'));
+  inp.key(['escape'], () => { app.lastEscapeClose = Date.now(); app.screen.grabKeys = false; go('dashboard'); });
 }
 
-// ─── SCANS ──────────────────────────────────────────────────────
-
-function renderScans(): void {
-  renderTabs(1);
-  blessed.text({ parent: contentBox, top: 1, left: 1, content: ' All Sessions', style: { fg: 'cyan', bold: true } });
-
-  const sessions = listSessions();
-  if (sessions.length === 0) {
-    blessed.text({
-      parent: contentBox,
-      top: 3,
-      left: 2,
-      content: ' No sessions yet. Press [n] or [m] from Dashboard.',
-      style: { fg: 'gray' },
-    });
-    screen.render();
-    return;
-  }
-
-  sessions.forEach((s, i) => {
-    const c = s.status === 'in_progress' ? '{yellow-fg}' : s.status === 'completed' ? '{green-fg}' : '{red-fg}';
-    const type = s.sessionId.startsWith('manual') ? 'MANUAL' : 'AI';
-    const line = ` ${i + 1}. [${type}] ${s.targetUrl.slice(0, 35).padEnd(35)} | ${c}${s.status.padEnd(12)}{/} | ${s.currentPhase || '-'}`;
-    blessed.text({ parent: contentBox, top: 2 + i, left: 1, content: line, style: { fg: 'white' }, tags: true });
-  });
-  screen.render();
-}
-
-// ─── REPORTS ───────────────────────────────────────────────────
-
-let reportViewMode: 'list' | 'view' = 'list';
-let currentReportId = '';
-
-function renderReports(): void {
-  renderTabs(2);
-  reportViewMode = 'list';
-  currentReportId = '';
-  blessed.text({
-    parent: contentBox,
-    top: 1,
-    left: 1,
-    content: ' Reports  —  [1-9] Select  [Enter] View  [s] Save  [v] View Logs',
-    style: { fg: 'cyan', bold: true },
-  });
-  const reports = listReports();
-  if (reports.length === 0) {
-    blessed.text({
-      parent: contentBox,
-      top: 3,
-      left: 2,
-      content: ' No reports yet. Complete a scan to generate one.',
-      style: { fg: 'gray' },
-    });
-    screen.render();
-    return;
-  }
-  reports.forEach((r, i) => {
-    blessed.text({
-      parent: contentBox,
-      top: 2 + i,
-      left: 1,
-      content: ` ${i + 1}. ${r.targetUrl.slice(0, 35).padEnd(35)} | ${(r.fileSize / 1024).toFixed(1)} KB | ${r.sessionId.slice(0, 20)}`,
-      style: { fg: 'white' },
-    });
-  });
-  screen.render();
-}
-
-function renderReportContent(reportId: string): void {
-  clear();
-  reportViewMode = 'view';
-  currentReportId = reportId;
-
-  blessed.text({
-    parent: contentBox,
-    top: 0,
-    left: 1,
-    content: ' Report  —  [b] Back to List  [s] Save to File  [v] Raw Logs',
-    style: { fg: 'cyan', bold: true },
-  });
-
-  const content = getReportContent(reportId);
-  if (!content) {
-    blessed.text({ parent: contentBox, top: 2, left: 2, content: ' Report not found.', style: { fg: 'red' } });
-    screen.render();
-    return;
-  }
-
-  // Show report in a scrollable box
-  const box = blessed.box({
-    parent: contentBox,
-    top: 1,
-    left: 0,
-    width: '100%',
-    height: '100%-2',
-    content,
-    style: { fg: 'white', bg: 'black' },
-    tags: true,
-    scrollable: true,
-    scrollbar: { ch: ' ', style: { bg: 'white' } },
-    keys: true,
-    vi: true,
-  });
-
-  box.focus();
-  screen.render();
-}
-
-function renderLogContent(reportId: string): void {
-  clear();
-  currentReportId = reportId;
-
-  blessed.text({
-    parent: contentBox,
-    top: 0,
-    left: 1,
-    content: ' Raw Logs  —  [b] Back to Report  [s] Save to File',
-    style: { fg: 'cyan', bold: true },
-  });
-
-  const logs = getSessionLogContent(reportId);
-  const display = logs || ' No logs found for this session.';
-
-  const box = blessed.box({
-    parent: contentBox,
-    top: 1,
-    left: 0,
-    width: '100%',
-    height: '100%-2',
-    content: display,
-    style: { fg: 'white', bg: 'black' },
-    tags: true,
-    scrollable: true,
-    scrollbar: { ch: ' ', style: { bg: 'white' } },
-    keys: true,
-    vi: true,
-  });
-
-  box.focus();
-  screen.render();
-}
-
-// ─── REPORT ID PROMPT ──────────────────────────────────────────
-
-function showReportIdPrompt(action: 'view' | 'save'): void {
-  clear();
-  const label = action === 'view' ? 'View' : 'Save';
-  blessed.text({
-    parent: contentBox,
-    top: 3,
-    left: 2,
-    content: `Enter Session ID to ${label}:`,
-    style: { fg: 'cyan', bold: true },
-  });
-  blessed.text({
-    parent: contentBox,
-    top: 4,
-    left: 2,
-    content: 'Example: manual-1234567890-abc123',
-    style: { fg: 'gray' },
-  });
-  blessed.text({
-    parent: contentBox,
-    top: 5,
-    left: 2,
-    content: 'Find session IDs via pentem list or check Scans tab',
-    style: { fg: 'gray' },
-  });
-
-  const inp = blessed.textbox({
-    parent: contentBox,
-    top: 7,
-    left: 2,
-    width: 76,
-    height: 1,
-    style: { bg: 'blue', fg: 'white', focus: { bg: 'green' } },
-    inputOnFocus: true,
-  });
-
-  inp.focus();
-  screen.render();
-
-  inp.key(['return', 'enter'], () => {
-    const id = inp.getValue().trim();
-    if (!id) return;
-    if (action === 'view') {
-      const content = getReportContent(id);
-      if (content) {
-        renderReportContent(id);
-      } else {
-        status(`No report found for session: ${id}`);
-        renderReports();
-      }
-    } else {
-      const outDir = path.join(process.cwd(), `pentem-report-${id}`);
-      const result = saveSessionOutput(id, outDir);
-      if (result) {
-        status(`Saved to: ${result}`);
-      } else {
-        status(`Failed to save session: ${id}`);
-      }
-      renderReports();
-    }
-  });
-
-  inp.key(['escape'], () => renderReports());
-}
-
-// ─── CONFIG ────────────────────────────────────────────────────
-
-function renderConfig(): void {
-  renderTabs(3);
-  blessed.text({ parent: contentBox, top: 1, left: 1, content: ' Configuration', style: { fg: 'cyan', bold: true } });
-
-  const provider = detectFromEnvOrConfig();
-  const cfg = getConfigContent();
-
-  const lines: string[] = [];
-
-  if (provider.configured) {
-    lines.push(` Provider: ${provider.provider.toUpperCase()}  [CONFIGURED]`);
-    lines.push(` API Key: ${provider.apiKey ? `${provider.apiKey.slice(0, 8)}...${provider.apiKey.slice(-4)}` : ''}`);
-    lines.push(` Model: ${provider.model || 'default'}`);
-  } else {
-    lines.push(' Provider: None');
-    lines.push(' No API key configured. Return to main menu to set one.');
-  }
-
-  lines.push('');
-  lines.push(' Env vars checked:');
-  lines.push('   ANTHROPIC_API_KEY  — Anthropic Claude');
-  lines.push('   OPENAI_API_KEY     — OpenAI GPT-4o / compatible');
-  lines.push('   ANTHROPIC_MODEL    — Claude model name');
-  lines.push('   OPENAI_MODEL       — OpenAI model name');
-  lines.push('');
-
-  if (cfg) {
-    lines.push(' Config file (~/.pentem/config.yaml):');
-    for (const l of cfg.split('\n').slice(0, 10)) {
-      lines.push(`  ${l}`);
-    }
-  }
-
-  lines.push('');
-  lines.push(' [r] Reset configuration  [Esc] Back to menu');
-
-  blessed.text({ parent: contentBox, top: 2, left: 1, content: lines.join('\n'), style: { fg: 'white' }, tags: true });
-  screen.render();
-}
-
-// ─── MANUAL SCAN ───────────────────────────────────────────────
-
-async function renderManualScanInput(): Promise<void> {
+function renderManualScanInput(): void {
   mode = 'manual-scan-input';
-  clear();
-  blessed.text({
-    parent: contentBox,
-    top: 3,
-    left: 2,
-    content: 'Manual Scan — No API key needed',
-    style: { fg: 'cyan', bold: true },
-  });
+  blessed.text({ parent: contentBox, top: 3, left: 2, content: 'Manual Scan — No API key needed', style: { fg: 'cyan', bold: true } });
   blessed.text({ parent: contentBox, top: 4, left: 2, content: 'Enter target URL:', style: { fg: 'white' } });
-  blessed.text({
-    parent: contentBox,
-    top: 5,
-    left: 2,
-    content: 'Press Enter to start, Escape to cancel',
-    style: { fg: 'gray' },
-  });
+  blessed.text({ parent: contentBox, top: 5, left: 2, content: 'Press Enter to start, Escape to cancel', style: { fg: 'gray' } });
 
   const inp = blessed.textbox({
-    parent: contentBox,
-    top: 7,
-    left: 2,
-    width: 76,
-    height: 1,
+    parent: contentBox, top: 7, left: 2, width: 76, height: 1,
     style: { bg: 'blue', fg: 'white', focus: { bg: 'green' } },
     inputOnFocus: true,
   });
@@ -764,168 +266,154 @@ async function renderManualScanInput(): Promise<void> {
   inp.key(['return', 'enter'], async () => {
     const url = inp.getValue().trim();
     if (!url) return;
-    if (!validateUrl(url)) {
-      status('Invalid URL');
-      return;
-    }
-
+    if (!validateUrl(url)) { status('Invalid URL'); return; }
+    app.lastEnterSubmit = Date.now();
+    app.screen.grabKeys = false;
     status(`Manual scanning ${url}...`);
     const result = await startScan(url, true);
-    if (result.success) {
-      status(`Manual scan started: ${url} — check Scans tab for report`);
-    } else {
-      status(`Failed: ${result.error}`);
-    }
+    if (result.success) status(`Manual scan started: ${url} — check Scans tab for report`);
+    else status(`Failed: ${result.error}`);
     go('dashboard');
   });
-
-  inp.key(['escape'], () => go('dashboard'));
+  inp.key(['escape'], () => { app.lastEscapeClose = Date.now(); app.screen.grabKeys = false; go('dashboard'); });
 }
 
-// ─── KEYBOARD DISPATCH ────────────────────────────────────────
-
 function refreshCurrentView(): void {
-  const inputModes = ['api-key-input', 'model-select', 'new-scan-input', 'manual-scan-input', 'setup'];
-  if (inputModes.includes(mode)) return;
+  if (INPUT_MODES.includes(mode)) return;
 
-  // Update status with running scan info
-  const sessions = listSessions();
-  const running = sessions.filter((s) => s.status === 'in_progress');
-  if (running.length > 0) {
-    status(`⏳ ${running.length} scan(s) running — ${running.map((s) => s.currentPhase).join(', ')} — [r] Refresh`);
-  } else {
-    status('Ready — [1-4] Tabs  [n] AI Scan  [m] Manual Scan  [q] Quit');
-  }
+  if (mode === 'scans') { scansScreen.refresh(); screen.render(); return; }
+  if (mode === 'reports') { reportsScreen.refresh(); screen.render(); return; }
+
+  const provider = detectFromEnvOrConfig();
+  const sessions = require('./services/workspace.ts').listSessions();
+  const running = sessions.filter((s: any) => s.status === 'in_progress');
+  if (running.length > 0) status(`⏳ ${running.length} scan(s) running — [r] Refresh`);
+  else status('Ready — [1-4] Tabs  [n] AI Scan  [m] Manual Scan  [q] Quit');
+
+  if (mode === 'dashboard') { dashboardScreen.refresh(); screen.render(); return; }
 
   clear();
-  switch (mode) {
-    case 'dashboard':
-      renderDashboard();
-      break;
-    case 'scans':
-      renderScans();
-      break;
-    case 'reports':
-      renderReports();
-      break;
-    case 'config':
-      renderConfig();
-      break;
+  if (TAB_MODES.includes(mode)) {
+    getScreen(mode as ScreenId).activate();
   }
   screen.render();
 }
 
 function setupKeyboard(): void {
-  screen.key(['q', 'Q', 'C-c'], () => {
-    screen.destroy();
-    process.exit(0);
-  });
+  screen.key(['q', 'Q', 'C-c'], () => { screen.destroy(); process.exit(0); });
 
   screen.key(['tab'], () => {
-    if (['api-key-input', 'model-select', 'new-scan-input', 'manual-scan-input'].includes(mode)) return;
-    const tabOrder: Mode[] = ['dashboard', 'scans', 'reports', 'config'];
-    const idx = tabOrder.indexOf(mode);
-    const nextMode = tabOrder[(idx + 1) % 4];
-    if (nextMode) go(nextMode);
-    else go('dashboard');
+    if (INPUT_MODES.includes(mode)) return;
+    const idx = TAB_MODES.indexOf(mode as ScreenId);
+    const nextMode = TAB_MODES[(idx + 1) % 4]!;
+    go(nextMode);
   });
 
-  // Number keys — different behavior based on current mode
   screen.key(['1'], () => {
-    if (mode === 'setup') {
-      pendingProvider = 'anthropic';
-      go('api-key-input');
-      return;
-    }
-    if (['api-key-input', 'model-select', 'new-scan-input', 'manual-scan-input'].includes(mode)) return;
+    if (mode === 'setup') { pendingProvider = 'anthropic'; go('api-key-input'); return; }
+    if (INPUT_MODES.includes(mode)) return;
     go('dashboard');
   });
-
   screen.key(['2'], () => {
-    if (mode === 'setup') {
-      renderManualScanInput();
-      return;
-    }
-    if (['api-key-input', 'model-select', 'new-scan-input', 'manual-scan-input'].includes(mode)) return;
+    if (mode === 'setup') { go('manual-scan-input'); return; }
+    if (INPUT_MODES.includes(mode)) return;
     go('scans');
   });
-
   screen.key(['3'], () => {
-    if (mode === 'setup') {
-      go('config');
-      return;
-    }
-    if (['api-key-input', 'model-select', 'new-scan-input', 'manual-scan-input'].includes(mode)) return;
+    if (mode === 'setup') { go('config'); return; }
+    if (INPUT_MODES.includes(mode)) return;
     go('reports');
   });
-
   screen.key(['4'], () => {
-    if (['api-key-input', 'model-select', 'new-scan-input', 'manual-scan-input'].includes(mode)) return;
+    if (INPUT_MODES.includes(mode)) return;
     go('config');
   });
 
   screen.key(['n', 'N'], () => {
-    if (['api-key-input', 'model-select', 'new-scan-input', 'manual-scan-input'].includes(mode)) return;
+    if (INPUT_MODES.includes(mode)) return;
+    if (mode === 'dashboard') { dashboardScreen.showNewAiScanInput(); return; }
+    if (mode === 'scans') { scansScreen.showInputPrompt(); return; }
     const provider = detectFromEnvOrConfig();
-    if (!provider.configured) {
-      status('Set up an API key first (press 1 at menu)');
-      return;
-    }
+    if (!provider.configured) { status('Set up an API key first (press 1 at menu)'); return; }
     go('new-scan-input');
   });
 
   screen.key(['m', 'M'], () => {
-    if (['api-key-input', 'model-select', 'new-scan-input', 'manual-scan-input'].includes(mode)) return;
-    renderManualScanInput();
+    if (INPUT_MODES.includes(mode)) return;
+    if (mode === 'dashboard') { dashboardScreen.showNewManualScanInput(); return; }
+    go('manual-scan-input');
   });
 
-  screen.key(['escape'], () => {
-    if (mode === 'reports' && reportViewMode === 'view') {
-      renderReports();
-      return;
-    }
-    if (['api-key-input', 'model-select', 'new-scan-input', 'manual-scan-input'].includes(mode)) {
-      go('setup');
-      return;
-    }
-    const provider = detectFromEnvOrConfig();
-    go(provider.configured ? 'dashboard' : 'setup');
-  });
-
-  // Reports tab shortcuts
-  screen.key(['v', 'V'], () => {
-    if (mode !== 'reports') return;
-    if (reportViewMode === 'view' && currentReportId) {
-      renderLogContent(currentReportId);
-      return;
-    }
-    // Show prompt to enter session ID
-    showReportIdPrompt('view');
+  screen.key(['d', 'D'], () => {
+    if (mode === 'dashboard') { dashboardScreen.showSessionDetails(); return; }
+    if (mode === 'scans') { scansScreen.showDetails(); return; }
   });
 
   screen.key(['s', 'S'], () => {
-    if (mode !== 'reports') return;
-    showReportIdPrompt('save');
+    if (mode === 'scans') { scansScreen.stopSelected(); return; }
+    if (mode === 'reports') { reportsScreen.saveToFile(); return; }
   });
 
-  screen.key(['b', 'B'], () => {
-    if (mode === 'reports' && reportViewMode === 'view') {
-      renderReports();
-    }
+  screen.key(['x', 'X'], () => {
+    if (mode === 'scans') { scansScreen.shareFindings(); return; }
+    if (mode === 'reports') { reportsScreen.shareFindings(); return; }
+  });
+
+  screen.key(['o', 'O'], () => {
+    if (mode === 'scans') { scansScreen.saveOutput(); return; }
+  });
+
+  screen.key(['c', 'C'], () => {
+    if (mode === 'scans') { scansScreen.cleanStale(); return; }
+  });
+
+  screen.key(['u', 'U'], () => {
+    if (mode === 'scans') { scansScreen.resumeScan(); return; }
+  });
+
+  screen.key(['v', 'V'], () => {
+    if (mode === 'scans') { scansScreen.viewReport(); return; }
+    if (mode === 'reports') { reportsScreen.showLogs(); return; }
+    if (mode === 'config') { configScreen.validate(); return; }
+  });
+
+  screen.key(['i', 'I'], () => {
+    if (mode === 'config') { configScreen.initDefault(); return; }
+  });
+
+  screen.key(['e', 'E'], () => {
+    if (mode === 'config') { configScreen.startEdit(); return; }
   });
 
   screen.key(['r', 'R'], () => {
+    if (INPUT_MODES.includes(mode)) return;
     if (mode === 'config') {
-      clearPersistedConfig();
-      process.env.ANTHROPIC_API_KEY = undefined;
-      process.env.OPENAI_API_KEY = undefined;
-      process.env.ANTHROPIC_MODEL = undefined;
-      process.env.OPENAI_MODEL = undefined;
-      status('Configuration reset');
-      go('setup');
+      configScreen.refresh();
+      status('Configuration reloaded');
       return;
     }
     refreshCurrentView();
+  });
+
+  screen.key(['enter', 'return'], () => {
+    if (Date.now() - app.lastEnterSubmit < 100) { app.lastEnterSubmit = 0; return; }
+    if (mode === 'dashboard') { dashboardScreen.showSessionDetails(); return; }
+    if (mode === 'scans') { scansScreen.viewLogs(); return; }
+    if (mode === 'reports') { reportsScreen.showReport(); return; }
+  });
+
+  screen.key(['b', 'B'], () => {
+    if (app.modalCount > 0) return;
+    if (mode === 'scans' || mode === 'reports') {
+      go(mode === 'scans' ? 'dashboard' : (TAB_MODES[Math.max(0, TAB_MODES.indexOf(mode as ScreenId) - 1)]!));
+    }
+  });
+
+  screen.key(['escape'], () => {
+    if (Date.now() - app.lastEscapeClose < 100) { app.lastEscapeClose = 0; return; }
+    if (INPUT_MODES.includes(mode)) { go('setup'); return; }
+    const provider = detectFromEnvOrConfig();
+    go(provider.configured ? 'dashboard' : 'setup');
   });
 }
 
@@ -934,43 +422,38 @@ function startAutoRefresh(): void {
   refreshInterval = setInterval(refreshCurrentView, 3000);
 }
 
-// ─── EXPORT ─────────────────────────────────────────────────────
-
 export async function startTUI(): Promise<void> {
   screen = blessed.screen({
     smartCSR: true,
     title: 'Pentem - AI Agentic & Manual Penetration Tester',
-    cursor: { artificial: true, shape: 'line', blink: true, color: null },
+    cursor: { artificial: true, shape: 'line', blink: true } as any,
     fullUnicode: true,
   });
 
+  screen.enableInput();
+
   blessed.box({
-    parent: screen,
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: 2,
+    parent: screen, top: 0, left: 0, width: '100%', height: 2,
     style: { fg: 'cyan', bg: 'black', bold: true },
     content: `${HEADER}\n${SUB}`,
     tags: true,
   });
+
   contentBox = blessed.box({
-    parent: screen,
-    top: 2,
-    left: 0,
-    width: '100%',
-    height: '100%-4',
+    parent: screen, top: 2, left: 0, width: '100%', height: '100%-4',
     style: { bg: 'black' },
   });
+
   statusBar = blessed.box({
-    parent: screen,
-    bottom: 0,
-    left: 0,
-    width: '100%',
-    height: 1,
+    parent: screen, bottom: 0, left: 0, width: '100%', height: 1,
     style: { bg: 'blue', fg: 'white' },
     content: '',
   });
+
+  dashboardScreen = new DashboardScreen(contentBox, app);
+  scansScreen = new ScansScreen(contentBox, app);
+  reportsScreen = new ReportsScreen(contentBox, app);
+  configScreen = new ConfigScreen(contentBox, app);
 
   setupKeyboard();
   startAutoRefresh();
