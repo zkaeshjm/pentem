@@ -43,6 +43,7 @@ export class ReportsScreen implements TUIScreen {
   }
 
   deactivate(): void {
+    this.app.screen.grabKeys = false;
     for (const m of this.modals) { try { m.detach(); m.destroy(); } catch {} }
     this.app.modalCount -= this.modals.length;
     if (this.app.modalCount < 0) this.app.modalCount = 0;

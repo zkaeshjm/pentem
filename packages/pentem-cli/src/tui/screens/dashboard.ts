@@ -51,6 +51,7 @@ export class DashboardScreen implements TUIScreen {
   }
 
   deactivate(): void {
+    this.app.screen.grabKeys = false;
     this.closeAll();
     this.box?.detach();
     this.box?.destroy();

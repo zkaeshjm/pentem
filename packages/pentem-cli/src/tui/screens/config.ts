@@ -28,6 +28,7 @@ export class ConfigScreen implements TUIScreen {
   }
 
   deactivate(): void {
+    this.app.screen.grabKeys = false;
     for (const m of this.modals) { try { m.detach(); m.destroy(); } catch {} }
     this.app.modalCount -= this.modals.length;
     if (this.app.modalCount < 0) this.app.modalCount = 0;
@@ -108,7 +109,11 @@ export class ConfigScreen implements TUIScreen {
       else this.app.setStatus('Failed to save configuration');
     });
 
-    textarea.key(['escape'], () => this.refresh());
+    textarea.key(['escape'], () => {
+      this.app.lastEscapeClose = Date.now();
+      this.app.screen.grabKeys = false;
+      this.refresh();
+    });
     textarea.focus();
     this.app.screen.render();
     this.app.setStatus('Editing config — Ctrl+S to save, Esc to exit');
